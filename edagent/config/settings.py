@@ -4,7 +4,8 @@ Application settings and configuration management
 
 import os
 from typing import Optional
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
@@ -59,6 +60,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra environment variables
 
 
 @lru_cache()
