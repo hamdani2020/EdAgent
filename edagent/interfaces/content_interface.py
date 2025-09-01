@@ -3,7 +3,7 @@ Abstract interface for content recommendation services
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from ..models import ContentRecommendation, Course, YouTubeVideo, UserContext, SkillLevel
 
 
@@ -91,3 +91,26 @@ class ContentRecommenderInterface(ABC):
             Ranked list of content recommendations
         """
         pass
+    
+    async def search_multi_source_content(
+        self,
+        query: str,
+        user_context: UserContext,
+        filters: ContentFilters = None,
+        max_results: int = 20
+    ) -> List[ContentRecommendation]:
+        """
+        Search for content across multiple sources
+        
+        Args:
+            query: Search query string
+            user_context: User context for personalization
+            filters: Content filtering criteria
+            max_results: Maximum number of results to return
+            
+        Returns:
+            Ranked list of content recommendations from all sources
+        """
+        # Default implementation - subclasses can override
+        youtube_content = await self.search_youtube_content(query, filters or ContentFilters())
+        return await self.rank_content(youtube_content, user_context)
