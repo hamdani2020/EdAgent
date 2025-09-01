@@ -19,6 +19,10 @@ from .content_recommender import ContentRecommender
 from .prompt_engineering import PromptBuilder
 from .response_processing import StructuredResponseHandler
 from .learning_path_generator import EnhancedLearningPathGenerator
+from .resume_analyzer import ResumeAnalyzer
+from .interview_preparation import InterviewPreparationService
+from ..models.resume import Resume, ResumeAnalysis
+from ..models.interview import InterviewSession, InterviewType, DifficultyLevel, IndustryGuidance
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,8 @@ class ConversationManager(ConversationManagerInterface):
         self.prompt_builder = PromptBuilder()
         self.response_handler = StructuredResponseHandler()
         self.learning_path_generator = EnhancedLearningPathGenerator()
+        self.resume_analyzer = ResumeAnalyzer(self.ai_service)
+        self.interview_service = InterviewPreparationService(self.ai_service)
         
         # Track conversation states for active users
         self._conversation_states: Dict[str, ConversationState] = {}
@@ -80,6 +86,15 @@ class ConversationManager(ConversationManagerInterface):
         self._content_keywords = [
             "recommend", "suggest", "find course", "tutorial", "video",
             "resource", "material", "book", "learn about"
+        ]
+        self._resume_keywords = [
+            "resume", "cv", "curriculum vitae", "review my resume", "resume feedback",
+            "resume analysis", "improve my resume", "resume help", "job application"
+        ]
+        self._interview_keywords = [
+            "interview", "interview prep", "interview preparation", "practice interview",
+            "interview questions", "interview practice", "mock interview", "job interview",
+            "interview tips", "interview coaching", "interview feedback"
         ]
     
     def _get_conversation_state(self, user_id: str) -> ConversationState:
@@ -106,6 +121,14 @@ class ConversationManager(ConversationManagerInterface):
         # Check for content recommendation intent
         if any(keyword in message_lower for keyword in self._content_keywords):
             return "content_recommendation"
+        
+        # Check for resume analysis intent
+        if any(keyword in message_lower for keyword in self._resume_keywords):
+            return "resume_analysis"
+        
+        # Check for interview preparation intent
+        if any(keyword in message_lower for keyword in self._interview_keywords):
+            return "interview_preparation"
         
         # Default to general conversation
         return "general"
@@ -146,6 +169,10 @@ class ConversationManager(ConversationManagerInterface):
                 return await self._initiate_learning_path_creation(user_id, message, user_context)
             elif intent == "content_recommendation":
                 return await self._handle_content_request(user_id, message, user_context)
+            elif intent == "resume_analysis":
+                return await self._handle_resume_analysis_request(user_id, message, user_context)
+            elif intent == "interview_preparation":
+                return await self._handle_interview_preparation_request(user_id, message, user_context)
             else:
                 return await self._handle_general_conversation(user_id, message, user_context)
         
@@ -896,3 +923,724 @@ class ConversationManager(ConversationManagerInterface):
                 )
         except Exception as e:
             logger.error(f"Error saving conversation for user {user_id}: {e}")
+    
+    async def _handle_resume_analysis_request(self, user_id: str, message: str, 
+                                            user_context: UserContext) -> ConversationResponse:
+        """Handle resume analysis requests"""
+        try:
+            logger.info(f"Handling resume analysis request for user {user_id}")
+            
+            # Check if user is asking for general resume advice or has specific resume data
+            if self._is_general_resume_question(message):
+                return await self._provide_general_resume_advice(user_id, message, user_context)
+            
+            # For now, provide guidance on how to submit resume for analysis
+            # In a full implementation, this would handle file uploads or structured input
+            response_message = self._create_resume_submission_guidance(user_context)
+            
+            return ConversationResponse(
+                message=response_message,
+                response_type=MessageType.CAREER_COACHING,
+                metadata={
+                    "intent": "resume_analysis",
+                    "requires_resume_data": True
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling resume analysis request: {e}")
+            return ConversationResponse(
+                message="I'd love to help you with your resume! Could you tell me what specific aspect of your resume you'd like feedback on?",
+                response_type=MessageType.CAREER_COACHING
+            )
+    
+    async def analyze_resume_data(self, user_id: str, resume: Resume) -> ConversationResponse:
+        """Analyze provided resume data and return feedback"""
+        try:
+            logger.info(f"Analyzing resume for user {user_id}")
+            
+            # Get user context for personalized analysis
+            user_context = await self._get_or_create_user_context(user_id)
+            
+            # Perform resume analysis
+            analysis = await self.resume_analyzer.analyze_resume(resume, user_context)
+            
+            # Format analysis results for conversation
+            response_message = self._format_resume_analysis_results(analysis)
+            
+            # Save analysis results to user context
+            await self._save_resume_analysis(user_id, analysis)
+            
+            return ConversationResponse(
+                message=response_message,
+                response_type=MessageType.CAREER_COACHING,
+                metadata={
+                    "intent": "resume_analysis_results",
+                    "analysis_id": analysis.resume_id,
+                    "overall_score": analysis.overall_score,
+                    "critical_issues": len(analysis.get_feedback_by_severity(FeedbackSeverity.CRITICAL))
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error analyzing resume: {e}")
+            return ConversationResponse(
+                message="I encountered an issue analyzing your resume. Please try again or contact support if the problem persists.",
+                response_type=MessageType.ERROR
+            )
+    
+    async def _provide_general_resume_advice(self, user_id: str, message: str, 
+                                           user_context: UserContext) -> ConversationResponse:
+        """Provide general resume advice based on user question"""
+        try:
+            # Use AI service to generate personalized resume advice
+            advice_prompt = self._build_resume_advice_prompt(message, user_context)
+            ai_response = await self.ai_service.generate_response(advice_prompt, user_context)
+            
+            # Add some structured advice
+            structured_advice = self._get_structured_resume_advice(message)
+            
+            combined_response = f"{ai_response}\n\n{structured_advice}"
+            
+            return ConversationResponse(
+                message=combined_response,
+                response_type=MessageType.CAREER_COACHING,
+                metadata={
+                    "intent": "general_resume_advice",
+                    "advice_type": self._categorize_resume_question(message)
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error providing resume advice: {e}")
+            return ConversationResponse(
+                message="Here are some general resume tips: Keep it concise (1-2 pages), use action verbs, quantify achievements, and tailor it to each job application.",
+                response_type=MessageType.CAREER_COACHING
+            )
+    
+    def _is_general_resume_question(self, message: str) -> bool:
+        """Check if message is asking for general resume advice vs. specific analysis"""
+        general_patterns = [
+            "how to", "what should", "tips for", "advice on", "help with",
+            "best practices", "how do i", "what makes", "should i include"
+        ]
+        
+        message_lower = message.lower()
+        return any(pattern in message_lower for pattern in general_patterns)
+    
+    def _create_resume_submission_guidance(self, user_context: UserContext) -> str:
+        """Create guidance for submitting resume for analysis"""
+        guidance = """I'd be happy to analyze your resume and provide personalized feedback! 
+
+Here's what I can help you with:
+• Overall resume structure and formatting
+• Content quality and impact
+• Industry-specific optimization
+• ATS (Applicant Tracking System) compatibility
+• Keyword optimization for your target role
+
+To get started, you can:
+1. Share specific sections of your resume for targeted feedback
+2. Ask about resume best practices for your industry
+3. Get advice on how to highlight your achievements
+
+What specific aspect of your resume would you like to work on first?"""
+        
+        # Personalize based on user context
+        if user_context.career_goals:
+            goal = user_context.career_goals[0]
+            guidance += f"\n\nSince you're interested in {goal}, I can provide industry-specific advice to make your resume stand out in that field."
+        
+        return guidance
+    
+    def _build_resume_advice_prompt(self, message: str, user_context: UserContext) -> str:
+        """Build prompt for AI-generated resume advice"""
+        context_info = ""
+        if user_context.career_goals:
+            context_info += f"Career goals: {', '.join(user_context.career_goals[:2])}\n"
+        
+        if user_context.current_skills:
+            skills = list(user_context.current_skills.keys())[:5]
+            context_info += f"Current skills: {', '.join(skills)}\n"
+        
+        prompt = f"""
+        User is asking for resume advice: "{message}"
+        
+        User context:
+        {context_info}
+        
+        Provide specific, actionable resume advice that addresses their question. 
+        Focus on practical tips they can implement immediately.
+        Keep the response encouraging and supportive.
+        """
+        
+        return prompt
+    
+    def _get_structured_resume_advice(self, message: str) -> str:
+        """Get structured resume advice based on question category"""
+        message_lower = message.lower()
+        
+        if "format" in message_lower or "structure" in message_lower:
+            return """
+**Resume Structure Tips:**
+• Use a clean, professional format with consistent fonts
+• Include: Contact info, Summary, Experience, Education, Skills
+• Use bullet points for easy scanning
+• Keep to 1-2 pages maximum
+• Use reverse chronological order for experience"""
+        
+        elif "skill" in message_lower:
+            return """
+**Skills Section Tips:**
+• Include both technical and soft skills
+• Match skills to job requirements
+• Use specific tools/technologies, not just general terms
+• Consider skill categories (Technical, Languages, etc.)
+• Include proficiency levels if relevant"""
+        
+        elif "experience" in message_lower or "work" in message_lower:
+            return """
+**Experience Section Tips:**
+• Start with strong action verbs (achieved, managed, developed)
+• Quantify results with numbers and percentages
+• Focus on achievements, not just responsibilities
+• Use the STAR method (Situation, Task, Action, Result)
+• Tailor descriptions to target role"""
+        
+        elif "summary" in message_lower or "objective" in message_lower:
+            return """
+**Professional Summary Tips:**
+• Write 2-3 sentences highlighting your value proposition
+• Include years of experience and key skills
+• Mention your career goals or target role
+• Use keywords from job descriptions
+• Make it compelling and specific to you"""
+        
+        else:
+            return """
+**General Resume Tips:**
+• Tailor your resume for each application
+• Use keywords from the job description
+• Proofread carefully for errors
+• Save as PDF to preserve formatting
+• Include relevant certifications and projects"""
+    
+    def _categorize_resume_question(self, message: str) -> str:
+        """Categorize the type of resume question"""
+        message_lower = message.lower()
+        
+        if any(word in message_lower for word in ["format", "structure", "layout"]):
+            return "formatting"
+        elif any(word in message_lower for word in ["skill", "abilities", "competencies"]):
+            return "skills"
+        elif any(word in message_lower for word in ["experience", "work", "job"]):
+            return "experience"
+        elif any(word in message_lower for word in ["summary", "objective", "profile"]):
+            return "summary"
+        elif any(word in message_lower for word in ["keyword", "ats", "applicant tracking"]):
+            return "optimization"
+        else:
+            return "general"
+    
+    def _format_resume_analysis_results(self, analysis: ResumeAnalysis) -> str:
+        """Format resume analysis results for conversation display"""
+        # Start with overall score
+        score_emoji = "🟢" if analysis.overall_score >= 80 else "🟡" if analysis.overall_score >= 60 else "🔴"
+        
+        result = f"{score_emoji} **Resume Analysis Complete**\n"
+        result += f"Overall Score: {analysis.overall_score:.1f}/100\n\n"
+        
+        # Add strengths
+        if analysis.strengths:
+            result += "**✅ Strengths:**\n"
+            for strength in analysis.strengths[:3]:
+                result += f"• {strength}\n"
+            result += "\n"
+        
+        # Add critical feedback
+        critical_feedback = analysis.get_feedback_by_severity(FeedbackSeverity.CRITICAL)
+        if critical_feedback:
+            result += "**🔴 Critical Issues:**\n"
+            for feedback in critical_feedback:
+                result += f"• {feedback.message}\n"
+                result += f"  💡 {feedback.suggestion}\n"
+            result += "\n"
+        
+        # Add important feedback
+        important_feedback = analysis.get_feedback_by_severity(FeedbackSeverity.IMPORTANT)
+        if important_feedback:
+            result += "**🟡 Important Improvements:**\n"
+            for feedback in important_feedback[:3]:
+                result += f"• {feedback.message}\n"
+                result += f"  💡 {feedback.suggestion}\n"
+            result += "\n"
+        
+        # Add top recommendations
+        if analysis.recommendations:
+            result += "**🎯 Top Recommendations:**\n"
+            for rec in analysis.recommendations[:3]:
+                result += f"{rec}\n"
+            result += "\n"
+        
+        # Add specific scores
+        result += "**📊 Detailed Scores:**\n"
+        result += f"• Industry Alignment: {analysis.industry_alignment*100:.0f}%\n"
+        result += f"• ATS Compatibility: {analysis.ats_compatibility*100:.0f}%\n"
+        result += f"• Keyword Optimization: {analysis.keyword_optimization*100:.0f}%\n\n"
+        
+        result += "Would you like me to elaborate on any specific area or help you improve a particular section?"
+        
+        return result
+    
+    async def _save_resume_analysis(self, user_id: str, analysis: ResumeAnalysis) -> None:
+        """Save resume analysis results to user context"""
+        try:
+            # In a full implementation, this would save to database
+            # For now, we'll add it to the user's conversation history
+            await self.user_context_manager.add_conversation(
+                user_id=user_id,
+                user_message="Resume analysis completed",
+                assistant_response=f"Analysis completed with score: {analysis.overall_score:.1f}",
+                message_type=MessageType.CAREER_COACHING,
+                context_data={
+                    "analysis_id": analysis.resume_id,
+                    "overall_score": analysis.overall_score,
+                    "analysis_date": analysis.analyzed_at.isoformat()
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error saving resume analysis: {e}")
+    
+    async def _handle_interview_preparation_request(self, user_id: str, message: str, 
+                                                  user_context: UserContext) -> ConversationResponse:
+        """Handle interview preparation requests"""
+        try:
+            logger.info(f"Handling interview preparation request for user {user_id}")
+            
+            # Check if user is asking for general interview advice or wants to start a practice session
+            if self._is_general_interview_question(message):
+                return await self._provide_general_interview_advice(user_id, message, user_context)
+            
+            # Check if user wants to start a practice session
+            if self._wants_practice_session(message):
+                return await self._initiate_interview_practice_session(user_id, message, user_context)
+            
+            # Check if user wants industry-specific guidance
+            if self._wants_industry_guidance(message):
+                return await self._provide_industry_interview_guidance(user_id, message, user_context)
+            
+            # Default to general interview preparation guidance
+            response_message = self._create_interview_preparation_guidance(user_context)
+            
+            return ConversationResponse(
+                message=response_message,
+                response_type="career_coaching",
+                metadata={
+                    "intent": "interview_preparation",
+                    "guidance_type": "general"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling interview preparation request: {e}")
+            return ConversationResponse(
+                message="I'd love to help you prepare for interviews! What specific aspect of interview preparation would you like to work on?",
+                response_type="career_coaching"
+            )
+    
+    def _is_general_interview_question(self, message: str) -> bool:
+        """Check if message is asking for general interview advice"""
+        message_lower = message.lower()
+        general_patterns = [
+            "interview tips", "how to prepare", "interview advice", "what should i expect",
+            "interview best practices", "how to answer", "common mistakes"
+        ]
+        return any(pattern in message_lower for pattern in general_patterns)
+    
+    def _wants_practice_session(self, message: str) -> bool:
+        """Check if user wants to start a practice interview session"""
+        message_lower = message.lower()
+        practice_patterns = [
+            "practice interview", "mock interview", "practice questions", "interview practice",
+            "let's practice", "can we practice", "start practice", "practice session"
+        ]
+        return any(pattern in message_lower for pattern in practice_patterns)
+    
+    def _wants_industry_guidance(self, message: str) -> bool:
+        """Check if user wants industry-specific interview guidance"""
+        message_lower = message.lower()
+        industry_patterns = [
+            "tech interview", "software interview", "finance interview", "healthcare interview",
+            "marketing interview", "consulting interview", "industry specific", "what to expect in"
+        ]
+        return any(pattern in message_lower for pattern in industry_patterns)
+    
+    async def _provide_general_interview_advice(self, user_id: str, message: str, 
+                                              user_context: UserContext) -> ConversationResponse:
+        """Provide AI-generated general interview advice"""
+        try:
+            # Build prompt for interview advice
+            prompt = self._build_interview_advice_prompt(message, user_context)
+            
+            # Get AI response
+            advice = await self.ai_service.generate_response(prompt, user_context)
+            
+            return ConversationResponse(
+                message=advice,
+                response_type="career_coaching",
+                suggested_actions=[
+                    "Start a practice interview session",
+                    "Get industry-specific guidance",
+                    "Practice common interview questions"
+                ],
+                metadata={
+                    "intent": "interview_advice",
+                    "advice_type": "general"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error generating interview advice: {e}")
+            return ConversationResponse(
+                message=self._get_structured_interview_advice(message),
+                response_type="career_coaching"
+            )
+    
+    async def _initiate_interview_practice_session(self, user_id: str, message: str, 
+                                                 user_context: UserContext) -> ConversationResponse:
+        """Initiate an interview practice session"""
+        try:
+            # Extract target role and industry from message or user context
+            target_role = self._extract_target_role(message, user_context)
+            target_industry = self._extract_target_industry(message, user_context)
+            
+            # Create interview session
+            session = await self.interview_service.create_interview_session(
+                user_id=user_id,
+                target_role=target_role,
+                target_industry=target_industry,
+                session_type=InterviewType.GENERAL,
+                difficulty_level=DifficultyLevel.INTERMEDIATE,
+                num_questions=5
+            )
+            
+            # Get first question
+            first_question = session.get_current_question()
+            
+            if first_question:
+                response_message = f"""Great! I've created a practice interview session for a {target_role} position.
+
+**Question 1 of {len(session.questions)}:**
+{first_question.question}
+
+Take your time to think about your answer. When you're ready, share your response and I'll provide detailed feedback to help you improve!
+
+*Tip: Try to use the STAR method (Situation, Task, Action, Result) for behavioral questions.*"""
+            else:
+                response_message = "I've set up your practice session, but encountered an issue generating questions. Let me help you with some general interview preparation instead."
+            
+            return ConversationResponse(
+                message=response_message,
+                response_type="career_coaching",
+                metadata={
+                    "intent": "interview_practice",
+                    "session_id": session.id,
+                    "current_question": 0,
+                    "total_questions": len(session.questions)
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error initiating interview practice session: {e}")
+            return ConversationResponse(
+                message="I'd love to help you practice! Could you tell me what role you're preparing for?",
+                response_type="career_coaching"
+            )
+    
+    async def _provide_industry_interview_guidance(self, user_id: str, message: str, 
+                                                 user_context: UserContext) -> ConversationResponse:
+        """Provide industry-specific interview guidance"""
+        try:
+            # Extract industry from message
+            industry = self._extract_industry_from_message(message)
+            
+            if not industry:
+                industry = self._infer_industry_from_context(user_context)
+            
+            # Get industry guidance
+            guidance = await self.interview_service.get_industry_guidance(industry)
+            
+            # Format guidance for display
+            response_message = self._format_industry_guidance(guidance)
+            
+            return ConversationResponse(
+                message=response_message,
+                response_type="career_coaching",
+                suggested_actions=[
+                    f"Practice {industry.lower()} interview questions",
+                    "Start a mock interview session",
+                    "Get specific role preparation tips"
+                ],
+                metadata={
+                    "intent": "industry_guidance",
+                    "industry": industry
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error providing industry guidance: {e}")
+            return ConversationResponse(
+                message="I can help you prepare for industry-specific interviews! Which industry are you targeting?",
+                response_type="career_coaching"
+            )
+    
+    def _extract_target_role(self, message: str, user_context: UserContext) -> str:
+        """Extract target role from message or user context"""
+        message_lower = message.lower()
+        
+        # Common role patterns
+        role_patterns = {
+            "software developer": ["software developer", "developer", "programmer", "software engineer"],
+            "data scientist": ["data scientist", "data analyst", "machine learning engineer"],
+            "product manager": ["product manager", "pm", "product owner"],
+            "marketing manager": ["marketing manager", "marketing", "digital marketing"],
+            "sales representative": ["sales rep", "sales", "account manager"],
+            "consultant": ["consultant", "consulting", "advisor"]
+        }
+        
+        for role, patterns in role_patterns.items():
+            if any(pattern in message_lower for pattern in patterns):
+                return role
+        
+        # Check user context career goals
+        if user_context.career_goals:
+            for goal in user_context.career_goals:
+                goal_lower = goal.lower()
+                for role, patterns in role_patterns.items():
+                    if any(pattern in goal_lower for pattern in patterns):
+                        return role
+        
+        return "Software Developer"  # Default role
+    
+    def _extract_target_industry(self, message: str, user_context: UserContext) -> str:
+        """Extract target industry from message or user context"""
+        return self._extract_industry_from_message(message) or self._infer_industry_from_context(user_context)
+    
+    def _extract_industry_from_message(self, message: str) -> Optional[str]:
+        """Extract industry from message text"""
+        message_lower = message.lower()
+        
+        industry_keywords = {
+            "Technology": ["tech", "technology", "software", "it", "startup"],
+            "Healthcare": ["healthcare", "medical", "health", "hospital", "pharma"],
+            "Finance": ["finance", "banking", "investment", "fintech", "financial"],
+            "Education": ["education", "academic", "university", "school", "teaching"],
+            "Marketing": ["marketing", "advertising", "media", "digital marketing"],
+            "Consulting": ["consulting", "advisory", "strategy", "management consulting"]
+        }
+        
+        for industry, keywords in industry_keywords.items():
+            if any(keyword in message_lower for keyword in keywords):
+                return industry
+        
+        return None
+    
+    def _infer_industry_from_context(self, user_context: UserContext) -> str:
+        """Infer industry from user context"""
+        if user_context.career_goals:
+            goals_text = " ".join(user_context.career_goals).lower()
+            
+            industry_keywords = {
+                "Technology": ["software", "developer", "programming", "tech", "engineer", "data"],
+                "Healthcare": ["healthcare", "medical", "nurse", "doctor", "health"],
+                "Finance": ["finance", "banking", "investment", "accounting", "financial"],
+                "Education": ["education", "teacher", "instructor", "academic", "training"],
+                "Marketing": ["marketing", "advertising", "social media", "brand", "digital marketing"],
+                "Consulting": ["consulting", "consultant", "advisory", "strategy"]
+            }
+            
+            for industry, keywords in industry_keywords.items():
+                if any(keyword in goals_text for keyword in keywords):
+                    return industry
+        
+        return "Technology"  # Default industry
+    
+    def _create_interview_preparation_guidance(self, user_context: UserContext) -> str:
+        """Create general interview preparation guidance"""
+        guidance = """I'm here to help you ace your interviews! Here's how I can assist you:
+
+**🎯 Interview Preparation Options:**
+
+**1. Practice Interview Session**
+- Mock interview with realistic questions
+- Personalized feedback on your responses
+- Industry and role-specific questions
+
+**2. General Interview Tips**
+- Best practices for answering common questions
+- How to structure your responses (STAR method)
+- Body language and communication tips
+
+**3. Industry-Specific Guidance**
+- What to expect in your target industry
+- Common questions and formats
+- Key skills employers look for
+
+**4. Question Practice**
+- Behavioral interview questions
+- Technical questions (for relevant roles)
+- Situational and problem-solving scenarios
+
+What would you like to focus on? Just let me know:
+- "Start a practice session" for mock interviews
+- "Interview tips" for general advice
+- "Tech interview prep" for industry-specific guidance
+- Or ask about any specific interview concern!"""
+
+        return guidance
+    
+    def _build_interview_advice_prompt(self, message: str, user_context: UserContext) -> str:
+        """Build prompt for AI-generated interview advice"""
+        context_info = ""
+        if user_context.career_goals:
+            context_info = f"\nUser's career goals: {', '.join(user_context.career_goals)}"
+        
+        if user_context.current_skills:
+            skills = ", ".join([f"{name} ({skill.level.value})" for name, skill in user_context.current_skills.items()])
+            context_info += f"\nUser's skills: {skills}"
+        
+        prompt = f"""You are EdAgent, a supportive career coach helping with interview preparation.
+
+User's question: {message}{context_info}
+
+Provide helpful, specific interview advice that is:
+- Encouraging and confidence-building
+- Practical and actionable
+- Tailored to their background when possible
+- Focused on interview best practices
+
+Keep your response conversational and supportive, as if you're a mentor helping them succeed."""
+        
+        return prompt
+    
+    def _get_structured_interview_advice(self, message: str) -> str:
+        """Get structured interview advice based on question category"""
+        message_lower = message.lower()
+        
+        if "nervous" in message_lower or "anxiety" in message_lower:
+            return """**Managing Interview Nerves:**
+
+• **Preparation is key** - The more prepared you are, the more confident you'll feel
+• **Practice out loud** - Rehearse your answers to common questions
+• **Arrive early** - Give yourself time to settle in and collect your thoughts
+• **Deep breathing** - Take slow, deep breaths to calm your nerves
+• **Positive visualization** - Imagine the interview going well
+• **Remember it's a conversation** - They want you to succeed too!
+
+Would you like to practice some questions to build your confidence?"""
+        
+        elif "questions to ask" in message_lower or "ask interviewer" in message_lower:
+            return """**Great Questions to Ask Interviewers:**
+
+**About the Role:**
+• "What does a typical day look like in this position?"
+• "What are the biggest challenges facing the team right now?"
+• "How do you measure success in this role?"
+
+**About Growth:**
+• "What opportunities are there for professional development?"
+• "Where do you see this role evolving in the next year?"
+
+**About Culture:**
+• "How would you describe the team dynamics?"
+• "What do you enjoy most about working here?"
+
+**About Next Steps:**
+• "What are the next steps in the interview process?"
+• "Is there anything else I can clarify about my background?"
+
+Asking thoughtful questions shows genuine interest and helps you evaluate if it's the right fit!"""
+        
+        elif "what to wear" in message_lower or "dress code" in message_lower:
+            return """**Interview Attire Guidelines:**
+
+**General Rule:** Dress one level above the company's daily dress code
+
+**Business Professional:**
+• Suit (navy, charcoal, or black)
+• Conservative shirt/blouse
+• Professional shoes
+• Minimal jewelry and accessories
+
+**Business Casual:**
+• Dress pants/skirt with button-down shirt
+• Blazer (optional but recommended)
+• Clean, polished shoes
+• Professional but slightly relaxed
+
+**Tips:**
+• Research the company culture beforehand
+• When in doubt, err on the side of being overdressed
+• Ensure clothes are clean, pressed, and fit well
+• Pay attention to grooming details
+
+Remember: You want your skills and personality to be the focus, not your outfit!"""
+        
+        else:
+            return """**Essential Interview Tips:**
+
+**Before the Interview:**
+• Research the company thoroughly
+• Review the job description and match your experience
+• Prepare specific examples using the STAR method
+• Plan your route and arrive 10-15 minutes early
+
+**During the Interview:**
+• Make eye contact and offer a firm handshake
+• Listen actively and ask clarifying questions
+• Use specific examples to demonstrate your skills
+• Show enthusiasm for the role and company
+
+**Common Questions to Prepare:**
+• "Tell me about yourself"
+• "Why are you interested in this position?"
+• "What are your strengths and weaknesses?"
+• "Describe a challenge you overcame"
+
+Would you like to practice answering any of these questions?"""
+    
+    def _format_industry_guidance(self, guidance: IndustryGuidance) -> str:
+        """Format industry guidance for display"""
+        result = f"**Interview Guidance for {guidance.industry} Industry**\n\n"
+        
+        if guidance.interview_format:
+            result += f"**Typical Interview Process:**\n{guidance.interview_format}\n\n"
+        
+        if guidance.common_questions:
+            result += "**Common Questions:**\n"
+            for i, question in enumerate(guidance.common_questions[:5], 1):
+                result += f"{i}. {question}\n"
+            result += "\n"
+        
+        if guidance.key_skills:
+            result += "**Key Skills Employers Look For:**\n"
+            for skill in guidance.key_skills[:6]:
+                result += f"• {skill}\n"
+            result += "\n"
+        
+        if guidance.preparation_tips:
+            result += "**Preparation Tips:**\n"
+            for tip in guidance.preparation_tips[:5]:
+                result += f"• {tip}\n"
+            result += "\n"
+        
+        if guidance.red_flags:
+            result += "**Things to Avoid:**\n"
+            for flag in guidance.red_flags[:3]:
+                result += f"• {flag}\n"
+            result += "\n"
+        
+        result += "Would you like to start a practice session with industry-specific questions?"
+        
+        return result

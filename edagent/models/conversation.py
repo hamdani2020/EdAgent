@@ -17,6 +17,9 @@ class MessageType(str, Enum):
     SYSTEM = "system"
     ASSESSMENT = "assessment"
     LEARNING_PATH = "learning_path"
+    CAREER_COACHING = "career_coaching"
+    CONTENT_RECOMMENDATION = "content_recommendation"
+    ERROR = "error"
 
 
 class ConversationStatus(str, Enum):
@@ -89,7 +92,7 @@ class Message:
 class ConversationResponse:
     """Represents a response from the AI agent"""
     message: str
-    response_type: Literal["text", "assessment", "learning_path", "content_recommendation"] = "text"
+    response_type: Literal["text", "assessment", "learning_path", "content_recommendation", "career_coaching", "error"] = "text"
     confidence_score: float = 1.0
     suggested_actions: List[str] = field(default_factory=list)
     content_recommendations: List[Dict[str, Any]] = field(default_factory=list)
@@ -105,7 +108,7 @@ class ConversationResponse:
         if not isinstance(self.message, str):
             raise ValueError("Response message must be a string")
         
-        if self.response_type not in ["text", "assessment", "learning_path", "content_recommendation"]:
+        if self.response_type not in ["text", "assessment", "learning_path", "content_recommendation", "career_coaching", "error"]:
             raise ValueError("Invalid response type")
         
         if not 0.0 <= self.confidence_score <= 1.0:

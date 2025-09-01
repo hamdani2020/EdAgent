@@ -112,14 +112,14 @@
     - _Requirements: 1.2, 1.1_
 
 - [ ] 8. Add career coaching features
-  - [ ] 8.1 Implement resume analysis functionality
+  - [x] 8.1 Implement resume analysis functionality
     - Create resume parsing and analysis logic
     - Build feedback generation for resume improvement
     - Implement industry-specific advice generation
     - Write tests for resume analysis accuracy
     - _Requirements: 5.1, 5.3_
 
-  - [ ] 8.2 Build interview preparation system
+  - [x] 8.2 Build interview preparation system
     - Create interview question generation based on career goals
     - Implement practice session management and feedback
     - Build industry-specific interview guidance
