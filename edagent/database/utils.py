@@ -36,7 +36,7 @@ class DatabaseUtils:
         return user
     
     @staticmethod
-    async def get_user_by_id(session: AsyncSession, user_id: str) -> Optional[User]:
+    async def get_user_by_id(session: AsyncSession, user_id) -> Optional[User]:
         """
         Get user by ID with all relationships loaded
         
@@ -61,7 +61,7 @@ class DatabaseUtils:
     @staticmethod
     async def update_user_preferences(
         session: AsyncSession, 
-        user_id: str, 
+        user_id, 
         preferences: Dict[str, Any]
     ) -> bool:
         """
@@ -88,7 +88,7 @@ class DatabaseUtils:
     @staticmethod
     async def upsert_user_skill(
         session: AsyncSession,
-        user_id: str,
+        user_id,
         skill_name: str,
         level: str,
         confidence_score: float
@@ -135,7 +135,7 @@ class DatabaseUtils:
         return skill
     
     @staticmethod
-    async def get_user_skills(session: AsyncSession, user_id: str) -> List[UserSkill]:
+    async def get_user_skills(session: AsyncSession, user_id) -> List[UserSkill]:
         """
         Get all skills for a user
         
@@ -156,7 +156,7 @@ class DatabaseUtils:
     @staticmethod
     async def add_conversation(
         session: AsyncSession,
-        user_id: str,
+        user_id,
         message: str,
         response: str,
         message_type: str = "general",
@@ -190,7 +190,7 @@ class DatabaseUtils:
     @staticmethod
     async def get_conversation_history(
         session: AsyncSession,
-        user_id: str,
+        user_id,
         limit: int = 50,
         message_type: Optional[str] = None
     ) -> List[Conversation]:
@@ -219,7 +219,7 @@ class DatabaseUtils:
     @staticmethod
     async def create_learning_path(
         session: AsyncSession,
-        user_id: str,
+        user_id,
         goal: str,
         estimated_duration_days: Optional[int] = None,
         difficulty_level: Optional[str] = None
@@ -313,7 +313,7 @@ class DatabaseUtils:
     @staticmethod
     async def get_active_learning_paths(
         session: AsyncSession,
-        user_id: str
+        user_id
     ) -> List[LearningPath]:
         """
         Get active learning paths for a user

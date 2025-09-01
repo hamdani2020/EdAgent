@@ -97,14 +97,14 @@
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
 - [ ] 7. Create API endpoints and user interface
-  - [ ] 7.1 Build REST API with FastAPI
+  - [x] 7.1 Build REST API with FastAPI
     - Create FastAPI application with proper middleware setup
     - Implement conversation endpoints for message handling
     - Create user management endpoints for profiles and preferences
     - Write API documentation and validation schemas
     - _Requirements: 1.1, 1.2, 7.1_
 
-  - [ ] 7.2 Implement WebSocket for real-time chat
+  - [x] 7.2 Implement WebSocket for real-time chat
     - Set up WebSocket connections for live conversation
     - Implement real-time message broadcasting and response streaming
     - Create connection management and error handling
