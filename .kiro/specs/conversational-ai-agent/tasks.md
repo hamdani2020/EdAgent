@@ -22,15 +22,15 @@
     - Write unit tests for conversation flow models
     - _Requirements: 1.1, 3.1, 3.3, 4.1_
 
-- [ ] 3. Create database layer and user context management
-  - [ ] 3.1 Implement database connection and schema
+- [x] 3. Create database layer and user context management
+  - [x] 3.1 Implement database connection and schema
     - Set up SQLAlchemy models matching the design schema
     - Create database connection management with connection pooling
     - Implement database migration scripts for schema creation
     - Write database utility functions for common operations
     - _Requirements: 1.4, 2.4, 7.4_
 
-  - [ ] 3.2 Build user context manager service
+  - [x] 3.2 Build user context manager service
     - Implement UserContextManager class with async methods
     - Create methods for storing and retrieving user profiles
     - Implement skill tracking and progress management
