@@ -313,6 +313,31 @@ Tailor all advice to their experience level and target role."""
             budget_preference=budget_preference
         )
     
+    def build_adaptive_assessment_prompt(self, skill_area: str, previous_responses: List[str]) -> str:
+        """Build a prompt for generating adaptive assessment questions"""
+        responses_text = self._format_responses(previous_responses)
+        
+        prompt = f"""Based on the user's responses below, generate 3 targeted follow-up questions to better assess their skills in {skill_area}.
+
+Previous responses:
+{responses_text}
+
+The questions should:
+1. Dig deeper into specific areas mentioned in their responses
+2. Assess practical application of their knowledge
+3. Identify specific strengths and gaps
+4. Be conversational and encouraging
+5. Help determine their exact skill level
+
+Generate exactly 3 questions, one per line, without numbering or formatting. Each question should be a complete sentence ending with a question mark.
+
+Example format:
+Can you walk me through how you would approach debugging a piece of code that isn't working?
+What's the most complex project you've worked on in this area?
+How do you typically learn new concepts or technologies?"""
+        
+        return prompt
+    
     def _build_base_system_prompt(self, context: Optional[UserContext] = None) -> str:
         """Build the base system prompt with user context"""
         base_prompt = self.templates.BASE_SYSTEM_PROMPT

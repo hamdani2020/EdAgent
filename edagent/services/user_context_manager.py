@@ -174,6 +174,37 @@ class UserContextManager(UserContextInterface):
             logger.error(f"Error tracking progress for user {user_id}: {e}")
             raise
     
+    async def save_assessment_results(self, user_id: str, assessment_results: Dict[str, Any]) -> None:
+        """
+        Save skill assessment results for a user
+        
+        Args:
+            user_id: Unique user identifier
+            assessment_results: Dictionary containing assessment results
+        """
+        try:
+            async with get_database_connection() as session:
+                # Get or create user
+                db_user = await self.db_utils.get_user_by_id(session, user_id)
+                if not db_user:
+                    logger.warning(f"User {user_id} not found when saving assessment results")
+                    return
+                
+                # Update user preferences with assessment results
+                current_preferences = db_user.preferences or {}
+                current_preferences['assessment_results'] = assessment_results
+                current_preferences['last_assessment_date'] = datetime.now().isoformat()
+                
+                db_user.preferences = current_preferences
+                db_user.last_active = datetime.now()
+                
+                await session.commit()
+                logger.info(f"Saved assessment results for user {user_id}")
+                
+        except Exception as e:
+            logger.error(f"Error saving assessment results for user {user_id}: {e}")
+            raise
+    
     async def get_conversation_history(self, user_id: str, limit: int = 50) -> List[Dict]:
         """
         Get user's conversation history

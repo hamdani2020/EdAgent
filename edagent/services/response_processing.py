@@ -362,6 +362,40 @@ class StructuredResponseHandler:
             logger.error(f"Error processing conversation response: {e}")
             return self._create_fallback_conversation_response()
     
+    def parse_assessment_questions(self, response: str) -> List[str]:
+        """Parse assessment questions from AI response"""
+        try:
+            # Clean the response
+            cleaned_response = response.strip()
+            
+            # Split by lines and filter for questions
+            lines = [line.strip() for line in cleaned_response.split('\n') if line.strip()]
+            questions = []
+            
+            for line in lines:
+                # Skip empty lines and non-question lines
+                if not line or not line.endswith('?'):
+                    continue
+                
+                # Remove numbering and formatting
+                question = re.sub(r'^\d+[\.\)]\s*', '', line)  # Remove "1. " or "1) "
+                question = re.sub(r'^[-\*]\s*', '', question)  # Remove "- " or "* "
+                question = question.strip()
+                
+                if question and len(question) > 10:  # Minimum meaningful length
+                    questions.append(question)
+            
+            # Limit to 3 questions as requested
+            return questions[:3]
+            
+        except Exception as e:
+            logger.error(f"Error parsing assessment questions: {e}")
+            return [
+                "Can you tell me more about your experience with this skill?",
+                "What challenges have you faced when working in this area?",
+                "How would you rate your confidence level from 1 to 10?"
+            ]
+    
     def _create_milestone_from_data(self, data: Dict[str, Any], order_index: int) -> Milestone:
         """Create Milestone object from parsed data"""
         # Convert duration

@@ -16,6 +16,8 @@ from ..models.user_context import UserContext, SkillLevel, SkillLevelEnum
 from .ai_service import GeminiAIService
 from .user_context_manager import UserContextManager
 from .content_recommender import ContentRecommender
+from .prompt_engineering import PromptBuilder
+from .response_processing import StructuredResponseHandler
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,8 @@ class ConversationManager(ConversationManagerInterface):
         self.ai_service = GeminiAIService()
         self.user_context_manager = UserContextManager()
         self.content_recommender = ContentRecommender()
+        self.prompt_builder = PromptBuilder()
+        self.response_handler = StructuredResponseHandler()
         
         # Track conversation states for active users
         self._conversation_states: Dict[str, ConversationState] = {}
@@ -348,9 +352,18 @@ class ConversationManager(ConversationManagerInterface):
         """Handle user response during skill assessment"""
         try:
             assessment = conv_state.active_assessment
+            user_context = await self._get_or_create_user_context(user_id)
             
             # Add user response to assessment
             assessment.add_response(message)
+            
+            # Generate adaptive questions after initial responses (only once)
+            if len(assessment.responses) == 3 and len(assessment.questions) == 5:
+                try:
+                    await self._generate_adaptive_questions(assessment, user_context)
+                except Exception as e:
+                    logger.error(f"Error generating adaptive questions: {e}")
+                    # Continue with original questions if adaptive generation fails
             
             # Check if assessment is complete
             if assessment.is_complete():
@@ -371,36 +384,48 @@ class ConversationManager(ConversationManagerInterface):
                 
                 await self.user_context_manager.update_skills(user_id, skills_dict)
                 
+                # Save assessment results to user context
+                await self.user_context_manager.save_assessment_results(user_id, skill_assessment.to_dict())
+                
                 # Complete assessment
                 assessment.complete_assessment(skill_assessment.to_dict())
                 conv_state.active_assessment = None
                 conv_state.current_context = None
                 
-                # Create response with results
+                # Create response with results and next steps
                 summary = self._create_assessment_summary(skill_assessment)
+                next_steps = self._generate_assessment_next_steps(skill_assessment)
+                
                 response = ConversationResponse(
-                    message=f"Assessment complete! Here's what I found:\n\n{summary}",
+                    message=f"Assessment complete! Here's what I found:\n\n{summary}\n\n{next_steps}",
                     response_type="assessment",
                     confidence_score=0.9,
                     suggested_actions=[
                         "Create a learning path based on your skills",
-                        "Get content recommendations for improvement areas"
+                        "Get content recommendations for improvement areas",
+                        "Take a more detailed assessment in a specific area"
                     ]
                 )
                 
                 return response
             
             else:
-                # Get next question
+                # Get next question with progress indicator
+                progress = assessment.get_progress()
                 next_question = assessment.questions[assessment.current_question_index]["question"]
                 
+                # Add encouraging message based on progress
+                encouragement = self._get_assessment_encouragement(progress, assessment.current_question_index)
+                
                 response = ConversationResponse(
-                    message=f"Thanks for that answer! {next_question}",
+                    message=f"{encouragement} {next_question}",
                     response_type="assessment",
                     confidence_score=0.95,
                     metadata={
                         "assessment_id": assessment.id, 
-                        "question_index": assessment.current_question_index
+                        "question_index": assessment.current_question_index,
+                        "progress": progress,
+                        "total_questions": len(assessment.questions)
                     }
                 )
                 
@@ -417,6 +442,41 @@ class ConversationManager(ConversationManagerInterface):
                 response_type="text",
                 confidence_score=0.5
             )
+    
+    def _get_assessment_encouragement(self, progress: float, question_index: int) -> str:
+        """Get encouraging message based on assessment progress"""
+        if question_index == 0:
+            return "Great start!"
+        elif progress < 0.3:
+            return "Thanks for that answer!"
+        elif progress < 0.6:
+            return "You're doing great!"
+        elif progress < 0.9:
+            return "Almost there!"
+        else:
+            return "Last question!"
+    
+    def _generate_assessment_next_steps(self, skill_assessment) -> str:
+        """Generate personalized next steps based on assessment results"""
+        next_steps = "**Recommended Next Steps:**\n"
+        
+        if skill_assessment.overall_level.value == "beginner":
+            next_steps += "• Start with foundational courses in your area of interest\n"
+            next_steps += "• Focus on hands-on practice with simple projects\n"
+        elif skill_assessment.overall_level.value == "intermediate":
+            next_steps += "• Build more complex projects to strengthen your skills\n"
+            next_steps += "• Consider specializing in specific areas\n"
+        else:
+            next_steps += "• Take on challenging projects or contribute to open source\n"
+            next_steps += "• Consider mentoring others or teaching\n"
+        
+        if skill_assessment.weaknesses:
+            next_steps += f"• Focus on improving: {', '.join(skill_assessment.weaknesses[:2])}\n"
+        
+        if skill_assessment.recommendations:
+            next_steps += f"• {skill_assessment.recommendations[0]}\n"
+        
+        return next_steps
     
     async def _initiate_learning_path_creation(
         self, 
@@ -592,6 +652,98 @@ class ConversationManager(ConversationManagerInterface):
         
         for question in questions:
             assessment.add_question(question, question_type="open")
+    
+    async def _generate_adaptive_questions(self, assessment: AssessmentSession, user_context: UserContext) -> None:
+        """Generate adaptive follow-up questions based on previous responses"""
+        try:
+            if len(assessment.responses) < 2:
+                return  # Need at least 2 responses to adapt
+            
+            # Analyze responses to determine skill area focus
+            responses_text = [resp["response"] for resp in assessment.responses]
+            skill_area = self.ai_service._infer_skill_area(responses_text)
+            
+            # Update assessment skill area if it's more specific than "General"
+            if skill_area != "General" and assessment.skill_area == "General":
+                assessment.skill_area = skill_area
+            
+            # Generate skill-specific questions using AI service
+            try:
+                adaptive_questions = await self._get_skill_specific_questions(skill_area, responses_text)
+            except Exception as e:
+                logger.error(f"Error getting adaptive questions: {e}")
+                adaptive_questions = self._get_fallback_questions_for_skill(skill_area)
+            
+            # Add adaptive questions to assessment (limit to 2 to keep assessment manageable)
+            for question in adaptive_questions[:2]:
+                assessment.add_question(question, question_type="adaptive")
+                
+            logger.info(f"Added {len(adaptive_questions[:2])} adaptive questions for {skill_area}")
+            
+        except Exception as e:
+            logger.error(f"Error generating adaptive questions: {e}")
+            # Add fallback questions if adaptive generation fails
+            self._add_fallback_questions(assessment)
+    
+    async def _get_skill_specific_questions(self, skill_area: str, previous_responses: List[str]) -> List[str]:
+        """Get skill-specific assessment questions from AI service"""
+        try:
+            # Use AI service to generate targeted questions
+            prompt = self.prompt_builder.build_adaptive_assessment_prompt(skill_area, previous_responses)
+            model = self.ai_service._get_model("reasoning")
+            generation_config = self.ai_service._get_generation_config("reasoning")
+            
+            response = await self.ai_service._make_api_call(model, prompt, generation_config)
+            
+            # Parse questions from response
+            questions = self.response_handler.parse_assessment_questions(response)
+            
+            return questions[:3]  # Limit to 3 additional questions
+            
+        except Exception as e:
+            logger.error(f"Error getting skill-specific questions: {e}")
+            return self._get_fallback_questions_for_skill(skill_area)
+    
+    def _add_fallback_questions(self, assessment: AssessmentSession) -> None:
+        """Add fallback questions if adaptive generation fails"""
+        fallback_questions = [
+            "Can you describe a project or task you've worked on recently?",
+            "What would you say is your biggest learning challenge right now?"
+        ]
+        
+        for question in fallback_questions:
+            assessment.add_question(question, question_type="fallback")
+    
+    def _get_fallback_questions_for_skill(self, skill_area: str) -> List[str]:
+        """Get fallback questions specific to a skill area"""
+        skill_questions = {
+            "Programming": [
+                "What programming languages have you used, if any?",
+                "Have you built any applications or websites?",
+                "How comfortable are you with debugging code?"
+            ],
+            "Web Development": [
+                "Have you created any websites before?",
+                "Are you familiar with HTML, CSS, or JavaScript?",
+                "What web development tools have you used?"
+            ],
+            "Data Science": [
+                "Have you worked with data analysis before?",
+                "Are you familiar with Excel, SQL, or Python for data?",
+                "What types of data problems interest you?"
+            ],
+            "Design": [
+                "Have you created any visual designs or graphics?",
+                "What design tools have you used?",
+                "How do you approach solving design problems?"
+            ]
+        }
+        
+        return skill_questions.get(skill_area, [
+            "What specific skills in this area interest you most?",
+            "Have you had any formal or informal training in this field?",
+            "What would success look like for you in this area?"
+        ])
     
     def _extract_learning_goal(self, message: str) -> Optional[str]:
         """Extract learning goal from user message"""
