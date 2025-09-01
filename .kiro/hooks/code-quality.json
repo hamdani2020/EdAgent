@@ -1,0 +1,13 @@
+{
+  "name": "Code Quality Check",
+  "description": "Run linting and formatting checks on Python files",
+  "trigger": {
+    "type": "manual",
+    "label": "Check Code Quality"
+  },
+  "action": {
+    "type": "agent_execution",
+    "prompt": "Review the current Python file for code quality issues. Check for:\n1. PEP 8 compliance\n2. Type hint usage\n3. Error handling\n4. Documentation\n5. Security best practices\n\nProvide specific suggestions for improvement."
+  },
+  "enabled": true
+}

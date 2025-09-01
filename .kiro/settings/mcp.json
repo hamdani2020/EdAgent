@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "youtube-search": {
+      "command": "uvx",
+      "args": ["youtube-search-mcp@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": ["search_videos", "get_video_details"]
+    },
+    "web-search": {
+      "command": "uvx", 
+      "args": ["web-search-mcp@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": ["search"]
+    }
+  }
+}
