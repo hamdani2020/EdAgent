@@ -250,6 +250,7 @@ class TestConversationManager:
         # Create mock learning path
         mock_learning_path = LearningPath(
             title="Python Developer Path",
+            description="Comprehensive path to become a Python developer",
             goal="become a Python developer",
             milestones=[
                 Milestone(
@@ -263,7 +264,8 @@ class TestConversationManager:
             difficulty_level=DifficultyLevel.BEGINNER
         )
         
-        conversation_manager.ai_service.create_learning_path = AsyncMock(return_value=mock_learning_path)
+        # Mock the enhanced learning path generator instead of AI service directly
+        conversation_manager.learning_path_generator.create_comprehensive_learning_path = AsyncMock(return_value=mock_learning_path)
         conversation_manager.user_context_manager.create_learning_path = AsyncMock(return_value="path-123")
         
         user_id = "test-user-123"
@@ -276,8 +278,12 @@ class TestConversationManager:
         assert result.goal == goal
         assert len(result.milestones) == 1
         
-        # Verify AI service was called with correct parameters
-        conversation_manager.ai_service.create_learning_path.assert_called_once_with(goal, sample_user_context.current_skills)
+        # Verify enhanced learning path generator was called with correct parameters
+        conversation_manager.learning_path_generator.create_comprehensive_learning_path.assert_called_once_with(
+            goal=goal,
+            current_skills=sample_user_context.current_skills,
+            user_context=sample_user_context
+        )
     
     @pytest.mark.asyncio
     async def test_get_conversation_history(self, conversation_manager):

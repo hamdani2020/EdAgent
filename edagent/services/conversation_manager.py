@@ -18,6 +18,7 @@ from .user_context_manager import UserContextManager
 from .content_recommender import ContentRecommender
 from .prompt_engineering import PromptBuilder
 from .response_processing import StructuredResponseHandler
+from .learning_path_generator import EnhancedLearningPathGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ class ConversationManager(ConversationManagerInterface):
         self.content_recommender = ContentRecommender()
         self.prompt_builder = PromptBuilder()
         self.response_handler = StructuredResponseHandler()
+        self.learning_path_generator = EnhancedLearningPathGenerator()
         
         # Track conversation states for active users
         self._conversation_states: Dict[str, ConversationState] = {}
@@ -197,22 +199,26 @@ class ConversationManager(ConversationManagerInterface):
     
     async def generate_learning_path(self, user_id: str, goal: str) -> LearningPath:
         """
-        Generate a personalized learning path
+        Generate a comprehensive personalized learning path
         
         Args:
             user_id: Unique user identifier
             goal: User's learning or career goal
             
         Returns:
-            Personalized learning path
+            Comprehensive personalized learning path
         """
         try:
             # Get user context and skills
             user_context = await self._get_or_create_user_context(user_id)
             current_skills = await self.user_context_manager.get_user_skills(user_id)
             
-            # Generate learning path using AI service
-            learning_path = await self.ai_service.create_learning_path(goal, current_skills)
+            # Generate comprehensive learning path using enhanced generator
+            learning_path = await self.learning_path_generator.create_comprehensive_learning_path(
+                goal=goal,
+                current_skills=current_skills,
+                user_context=user_context
+            )
             
             # Save learning path to database
             await self.user_context_manager.create_learning_path(
@@ -220,10 +226,10 @@ class ConversationManager(ConversationManagerInterface):
                 goal=goal,
                 milestones=[milestone.to_dict() for milestone in learning_path.milestones],
                 estimated_duration_days=learning_path.estimated_duration.days if learning_path.estimated_duration else None,
-                difficulty_level=learning_path.difficulty_level
+                difficulty_level=learning_path.difficulty_level.value
             )
             
-            logger.info(f"Generated learning path for user {user_id}: {goal}")
+            logger.info(f"Generated comprehensive learning path for user {user_id}: {goal}")
             return learning_path
         
         except Exception as e:
