@@ -2,10 +2,18 @@
 API layer for EdAgent application
 """
 
-from .endpoints import router
-from .websocket import websocket_endpoint
+from .app import app
+from .endpoints import (
+    conversation_router,
+    user_router,
+    assessment_router,
+    learning_router
+)
 
 __all__ = [
-    "router",
-    "websocket_endpoint",
+    "app",
+    "conversation_router",
+    "user_router",
+    "assessment_router",
+    "learning_router"
 ]

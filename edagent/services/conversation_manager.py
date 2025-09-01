@@ -58,7 +58,9 @@ class ConversationManager(ConversationManagerInterface):
         """Initialize the conversation manager with required services"""
         self.ai_service = GeminiAIService()
         self.user_context_manager = UserContextManager()
-        self.content_recommender = ContentRecommender()
+        from ..config import get_settings
+        settings = get_settings()
+        self.content_recommender = ContentRecommender(settings)
         self.prompt_builder = PromptBuilder()
         self.response_handler = StructuredResponseHandler()
         self.learning_path_generator = EnhancedLearningPathGenerator()

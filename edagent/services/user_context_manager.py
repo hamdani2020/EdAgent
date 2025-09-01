@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..interfaces.user_context_interface import UserContextInterface
 from ..models.user_context import UserContext, SkillLevel, UserPreferences, SkillLevelEnum, LearningStyleEnum
 from ..models.conversation import Message, MessageType
-from ..database import DatabaseUtils, get_database_connection
+from ..database import DatabaseUtils
+from ..database.connection import db_manager
 from ..database.models import User as DBUser, UserSkill as DBUserSkill, Conversation as DBConversation
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,17 @@ class UserContextManager(UserContextInterface):
             User context if found, None otherwise
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                try:
+                    uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                except ValueError:
+                    logger.warning(f"Invalid UUID format for user_id: {user_id}")
+                    return None
+                
                 # Get user from database
-                db_user = await self.db_utils.get_user_by_id(session, user_id)
+                db_user = await self.db_utils.get_user_by_id(session, uuid_user_id)
                 if not db_user:
                     logger.info(f"User {user_id} not found in database")
                     return None
@@ -63,7 +72,7 @@ class UserContextManager(UserContextInterface):
             Newly created user context
         """
         try:
-            async with get_database_connection() as session:
+            async with db_manager.get_session() as session:
                 # Create user in database
                 db_user = await self.db_utils.create_user(session, preferences or {})
                 
@@ -98,11 +107,15 @@ class UserContextManager(UserContextInterface):
             skills: Dictionary of skill names to skill levels
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
                 for skill_name, skill_level in skills.items():
                     await self.db_utils.upsert_user_skill(
                         session=session,
-                        user_id=user_id,
+                        user_id=uuid_user_id,
                         skill_name=skill_name,
                         level=skill_level.level.value,
                         confidence_score=skill_level.confidence_score
@@ -110,7 +123,7 @@ class UserContextManager(UserContextInterface):
                 
                 # Update user's last active timestamp
                 await self.db_utils.update_user_preferences(
-                    session, user_id, {}  # Empty dict to just update timestamp
+                    session, uuid_user_id, {}  # Empty dict to just update timestamp
                 )
                 
                 logger.info(f"Updated {len(skills)} skills for user {user_id}")
@@ -128,13 +141,17 @@ class UserContextManager(UserContextInterface):
             preferences: User learning preferences
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
                 # Convert preferences to dictionary
                 prefs_dict = preferences.to_dict()
                 
                 # Update user preferences in database
                 success = await self.db_utils.update_user_preferences(
-                    session, user_id, prefs_dict
+                    session, uuid_user_id, prefs_dict
                 )
                 
                 if not success:
@@ -155,9 +172,14 @@ class UserContextManager(UserContextInterface):
             milestone_id: ID of completed milestone
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                uuid_milestone_id = uuid.UUID(milestone_id) if isinstance(milestone_id, str) else milestone_id
+                
                 # Mark milestone as completed
-                success = await self.db_utils.complete_milestone(session, milestone_id)
+                success = await self.db_utils.complete_milestone(session, uuid_milestone_id)
                 
                 if not success:
                     logger.warning(f"Milestone {milestone_id} not found or already completed")
@@ -165,7 +187,7 @@ class UserContextManager(UserContextInterface):
                 
                 # Update user's last active timestamp
                 await self.db_utils.update_user_preferences(
-                    session, user_id, {}  # Empty dict to just update timestamp
+                    session, uuid_user_id, {}  # Empty dict to just update timestamp
                 )
                 
                 logger.info(f"Tracked progress for user {user_id}, milestone {milestone_id}")
@@ -183,9 +205,13 @@ class UserContextManager(UserContextInterface):
             assessment_results: Dictionary containing assessment results
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
                 # Get or create user
-                db_user = await self.db_utils.get_user_by_id(session, user_id)
+                db_user = await self.db_utils.get_user_by_id(session, uuid_user_id)
                 if not db_user:
                     logger.warning(f"User {user_id} not found when saving assessment results")
                     return
@@ -217,10 +243,14 @@ class UserContextManager(UserContextInterface):
             List of conversation messages
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
                 # Get conversation history from database
                 conversations = await self.db_utils.get_conversation_history(
-                    session, user_id, limit
+                    session, uuid_user_id, limit
                 )
                 
                 # Convert to message format
@@ -273,10 +303,14 @@ class UserContextManager(UserContextInterface):
             context_data: Additional context data
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
                 await self.db_utils.add_conversation(
                     session=session,
-                    user_id=user_id,
+                    user_id=uuid_user_id,
                     message=user_message,
                     response=assistant_response,
                     message_type=message_type,
@@ -300,8 +334,12 @@ class UserContextManager(UserContextInterface):
             Dictionary of skill names to SkillLevel objects
         """
         try:
-            async with get_database_connection() as session:
-                db_skills = await self.db_utils.get_user_skills(session, user_id)
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
+                db_skills = await self.db_utils.get_user_skills(session, uuid_user_id)
                 
                 skills = {}
                 for db_skill in db_skills:
@@ -342,11 +380,15 @@ class UserContextManager(UserContextInterface):
             Learning path ID
         """
         try:
-            async with get_database_connection() as session:
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
                 # Create learning path
                 learning_path = await self.db_utils.create_learning_path(
                     session=session,
-                    user_id=user_id,
+                    user_id=uuid_user_id,
                     goal=goal,
                     estimated_duration_days=estimated_duration_days,
                     difficulty_level=difficulty_level
@@ -382,8 +424,12 @@ class UserContextManager(UserContextInterface):
             List of learning path dictionaries
         """
         try:
-            async with get_database_connection() as session:
-                learning_paths = await self.db_utils.get_active_learning_paths(session, user_id)
+            import uuid
+            async with db_manager.get_session() as session:
+                # Convert string user_id to UUID if needed
+                uuid_user_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+                
+                learning_paths = await self.db_utils.get_active_learning_paths(session, uuid_user_id)
                 
                 paths = []
                 for lp in learning_paths:
