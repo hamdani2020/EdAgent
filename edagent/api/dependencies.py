@@ -4,7 +4,9 @@ Dependency injection for EdAgent API
 
 import logging
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Dict, Any
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..services.conversation_manager import ConversationManager
 from ..services.user_context_manager import UserContextManager
@@ -91,6 +93,72 @@ def get_conversation_manager() -> ConversationManager:
         
         _conversation_manager = ConversationManager()
     return _conversation_manager
+
+
+# Security scheme for Bearer token authentication
+security = HTTPBearer()
+
+
+async def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> Dict[str, Any]:
+    """
+    Get current authenticated user from JWT token or API key
+    
+    This dependency validates the authentication token and returns user information.
+    It supports both JWT session tokens and API keys.
+    """
+    auth_service = get_auth_service()
+    
+    try:
+        # Try to validate as JWT session token first
+        token = credentials.credentials
+        result = await auth_service.validate_session_token(token)
+        
+        if result.is_valid:
+            return {
+                "user_id": result.user_id,
+                "session_id": result.session_id,
+                "auth_type": "session"
+            }
+        
+        # If JWT validation fails, try as API key
+        api_result = await auth_service.validate_api_key(token)
+        
+        if api_result.is_valid:
+            return {
+                "user_id": api_result.user_id,
+                "session_id": api_result.session_id,
+                "auth_type": "api_key"
+            }
+        
+        # If both fail, check for API key in headers
+        api_key = request.headers.get("X-API-Key")
+        if api_key:
+            api_result = await auth_service.validate_api_key(api_key)
+            if api_result.is_valid:
+                return {
+                    "user_id": api_result.user_id,
+                    "session_id": api_result.session_id,
+                    "auth_type": "api_key"
+                }
+        
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Authentication error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def cleanup_dependencies():
