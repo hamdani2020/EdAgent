@@ -44,10 +44,61 @@ edagent/
    - `YOUTUBE_API_KEY`: Your YouTube Data API key
    - `SECRET_KEY`: A secure secret key for session management
 
+## Features
+
+### Core AI Capabilities
+- **Conversational AI**: Natural language interactions powered by Google Gemini
+- **Skill Assessment**: Comprehensive evaluation of technical and soft skills
+- **Learning Path Generation**: Personalized roadmaps based on goals and current skills
+- **Content Recommendation**: Curated resources from YouTube and educational platforms
+- **Career Coaching**: Resume analysis, interview preparation, and career guidance
+
+### User Interface
+- **Streamlit Web App**: Comprehensive web interface with interactive components
+- **Real-time Chat**: WebSocket-powered live conversations with EdAgent
+- **Interactive Dashboards**: Progress tracking, analytics, and learning insights
+- **Mobile-Friendly**: Responsive design that works on all devices
+
+### Technical Features
+- **REST API**: Complete FastAPI backend with comprehensive endpoints
+- **WebSocket Support**: Real-time bidirectional communication
+- **Privacy Controls**: Comprehensive data management and privacy features
+- **Docker Support**: Containerized deployment with Docker Compose
+
+## Quick Start
+
+### Option 1: Run Both Backend and Frontend
+```bash
+# Start both FastAPI backend and Streamlit frontend
+python run_app.py
+```
+
+### Option 2: Run Components Separately
+```bash
+# Terminal 1: Start FastAPI backend
+uvicorn main:app --reload
+
+# Terminal 2: Start Streamlit frontend
+./scripts/start_frontend.sh
+```
+
+### Option 3: Demo Mode (Frontend Only)
+```bash
+# Run Streamlit with mock data (no backend required)
+./scripts/start_demo.sh
+```
+
+### Access Points
+- **Streamlit Frontend**: http://localhost:8501
+- **FastAPI Backend**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
+
 ## Configuration
 
 The application uses environment-based configuration with support for:
 - Development, testing, staging, and production environments
+- Streamlit frontend configuration
+- WebSocket and real-time features
 - Configurable AI model parameters
 - Database connection settings
 - Rate limiting and security options

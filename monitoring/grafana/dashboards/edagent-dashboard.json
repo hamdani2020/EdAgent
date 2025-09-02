@@ -1,0 +1,153 @@
+{
+    "dashboard": {
+        "id": null,
+        "title": "EdAgent Application Dashboard",
+        "tags": [
+            "edagent",
+            "application"
+        ],
+        "timezone": "browser",
+        "panels": [
+            {
+                "id": 1,
+                "title": "Request Rate",
+                "type": "graph",
+                "targets": [
+                    {
+                        "expr": "rate(http_requests_total{job=\"edagent\"}[5m])",
+                        "legendFormat": "{{method}} {{endpoint}}"
+                    }
+                ],
+                "yAxes": [
+                    {
+                        "label": "Requests/sec"
+                    }
+                ],
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 0,
+                    "y": 0
+                }
+            },
+            {
+                "id": 2,
+                "title": "Response Time",
+                "type": "graph",
+                "targets": [
+                    {
+                        "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"edagent\"}[5m]))",
+                        "legendFormat": "95th percentile"
+                    },
+                    {
+                        "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job=\"edagent\"}[5m]))",
+                        "legendFormat": "50th percentile"
+                    }
+                ],
+                "yAxes": [
+                    {
+                        "label": "Seconds"
+                    }
+                ],
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 12,
+                    "y": 0
+                }
+            },
+            {
+                "id": 3,
+                "title": "Error Rate",
+                "type": "graph",
+                "targets": [
+                    {
+                        "expr": "rate(http_requests_total{job=\"edagent\",status=~\"4..\"}[5m])",
+                        "legendFormat": "4xx errors"
+                    },
+                    {
+                        "expr": "rate(http_requests_total{job=\"edagent\",status=~\"5..\"}[5m])",
+                        "legendFormat": "5xx errors"
+                    }
+                ],
+                "yAxes": [
+                    {
+                        "label": "Errors/sec"
+                    }
+                ],
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 0,
+                    "y": 8
+                }
+            },
+            {
+                "id": 4,
+                "title": "Active Conversations",
+                "type": "stat",
+                "targets": [
+                    {
+                        "expr": "active_conversations_total{job=\"edagent\"}",
+                        "legendFormat": "Active Conversations"
+                    }
+                ],
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 12,
+                    "y": 8
+                }
+            },
+            {
+                "id": 5,
+                "title": "AI API Calls",
+                "type": "graph",
+                "targets": [
+                    {
+                        "expr": "rate(gemini_api_calls_total{job=\"edagent\"}[5m])",
+                        "legendFormat": "Gemini API calls/sec"
+                    }
+                ],
+                "yAxes": [
+                    {
+                        "label": "Calls/sec"
+                    }
+                ],
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 0,
+                    "y": 16
+                }
+            },
+            {
+                "id": 6,
+                "title": "Memory Usage",
+                "type": "graph",
+                "targets": [
+                    {
+                        "expr": "process_resident_memory_bytes{job=\"edagent\"} / 1024 / 1024",
+                        "legendFormat": "Memory Usage (MB)"
+                    }
+                ],
+                "yAxes": [
+                    {
+                        "label": "MB"
+                    }
+                ],
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 12,
+                    "y": 16
+                }
+            }
+        ],
+        "time": {
+            "from": "now-1h",
+            "to": "now"
+        },
+        "refresh": "30s"
+    }
+}

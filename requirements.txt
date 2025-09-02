@@ -31,6 +31,10 @@ python-dotenv>=1.0.0
 structlog>=23.2.0
 tenacity>=8.2.0  # Retry logic
 
+# Monitoring and metrics
+prometheus-client>=0.19.0
+python-json-logger>=2.0.7
+
 # Development and testing
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
