@@ -19,6 +19,7 @@ from .endpoints.auth import router as auth_router
 from .endpoints.privacy import router as privacy_router
 from .websocket import websocket_router
 from .exceptions import setup_exception_handlers
+from .metrics import metrics_endpoint
 
 
 logger = logging.getLogger(__name__)
@@ -63,15 +64,67 @@ def create_app() -> FastAPI:
     # Add routers
     setup_routers(app)
     
-    # Add health check endpoint
+    # Add health check endpoints
     @app.get("/health", tags=["Health"])
     async def health_check():
-        """Health check endpoint"""
+        """Basic health check endpoint"""
         return {
             "status": "healthy",
             "timestamp": time.time(),
             "version": "1.0.0"
         }
+    
+    @app.get("/health/detailed", tags=["Health"])
+    async def detailed_health_check():
+        """Detailed health check with service dependencies"""
+        from ..database.connection import get_database_engine
+        from ..services.ai_service import AIService
+        
+        health_status = {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "version": "1.0.0",
+            "services": {}
+        }
+        
+        # Check database connection
+        try:
+            engine = get_database_engine()
+            with engine.connect() as conn:
+                conn.execute("SELECT 1")
+            health_status["services"]["database"] = {"status": "healthy"}
+        except Exception as e:
+            health_status["services"]["database"] = {
+                "status": "unhealthy",
+                "error": str(e)
+            }
+            health_status["status"] = "degraded"
+        
+        # Check AI service
+        try:
+            ai_service = AIService()
+            # Simple test to verify API key is configured
+            if ai_service.gemini_api_key:
+                health_status["services"]["ai_service"] = {"status": "healthy"}
+            else:
+                health_status["services"]["ai_service"] = {
+                    "status": "unhealthy",
+                    "error": "API key not configured"
+                }
+                health_status["status"] = "degraded"
+        except Exception as e:
+            health_status["services"]["ai_service"] = {
+                "status": "unhealthy",
+                "error": str(e)
+            }
+            health_status["status"] = "degraded"
+        
+        return health_status
+    
+    @app.get("/metrics", tags=["Monitoring"])
+    async def get_metrics():
+        """Prometheus metrics endpoint"""
+        return await metrics_endpoint()
     
     return app
 
