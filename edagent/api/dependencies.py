@@ -11,6 +11,7 @@ from ..services.user_context_manager import UserContextManager
 from ..services.learning_path_generator import EnhancedLearningPathGenerator
 from ..services.ai_service import GeminiAIService
 from ..services.content_recommender import ContentRecommender
+from ..services.auth_service import AuthenticationService
 from ..database.connection import db_manager
 from ..config import get_settings
 
@@ -24,6 +25,7 @@ _user_context_manager: Optional[UserContextManager] = None
 _learning_path_generator: Optional[EnhancedLearningPathGenerator] = None
 _ai_service: Optional[GeminiAIService] = None
 _content_recommender: Optional[ContentRecommender] = None
+_auth_service: Optional[AuthenticationService] = None
 
 
 @lru_cache()
@@ -69,6 +71,15 @@ def get_learning_path_generator() -> EnhancedLearningPathGenerator:
 
 
 @lru_cache()
+def get_auth_service() -> AuthenticationService:
+    """Get authentication service instance"""
+    global _auth_service
+    if _auth_service is None:
+        _auth_service = AuthenticationService()
+    return _auth_service
+
+
+@lru_cache()
 def get_conversation_manager() -> ConversationManager:
     """Get conversation manager instance"""
     global _conversation_manager
@@ -85,7 +96,7 @@ def get_conversation_manager() -> ConversationManager:
 async def cleanup_dependencies():
     """Cleanup global service instances"""
     global _conversation_manager, _user_context_manager, _learning_path_generator
-    global _ai_service, _content_recommender
+    global _ai_service, _content_recommender, _auth_service
     
     # Close any resources that need cleanup
     if _user_context_manager:
@@ -98,5 +109,6 @@ async def cleanup_dependencies():
     _learning_path_generator = None
     _ai_service = None
     _content_recommender = None
+    _auth_service = None
     
     logger.info("Dependencies cleaned up")

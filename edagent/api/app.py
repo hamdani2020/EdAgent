@@ -13,8 +13,9 @@ from typing import Dict, Any
 
 from ..config import get_settings
 from ..database.connection import db_manager
-from .middleware import RateLimitMiddleware, LoggingMiddleware
+from .middleware import RateLimitMiddleware, LoggingMiddleware, AuthenticationMiddleware, InputSanitizationMiddleware
 from .endpoints import conversation_router, user_router, assessment_router, learning_router
+from .endpoints.auth import router as auth_router
 from .websocket import websocket_router
 from .exceptions import setup_exception_handlers
 
@@ -92,6 +93,15 @@ def setup_middleware(app: FastAPI, settings) -> None:
         allowed_hosts=["*"]  # Configure appropriately for production
     )
     
+    # Input sanitization middleware
+    app.add_middleware(
+        InputSanitizationMiddleware,
+        max_content_length=1024 * 1024  # 1MB
+    )
+    
+    # Authentication middleware
+    app.add_middleware(AuthenticationMiddleware)
+    
     # Rate limiting middleware
     app.add_middleware(
         RateLimitMiddleware,
@@ -105,6 +115,13 @@ def setup_middleware(app: FastAPI, settings) -> None:
 
 def setup_routers(app: FastAPI) -> None:
     """Setup API routers"""
+    
+    # Include authentication router (public endpoints)
+    app.include_router(
+        auth_router,
+        prefix="/api/v1/auth",
+        tags=["Authentication"]
+    )
     
     # Include all routers with prefixes
     app.include_router(

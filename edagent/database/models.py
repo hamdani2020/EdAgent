@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from sqlalchemy import (
     Column, String, DateTime, Float, Text, Boolean, 
-    ForeignKey, JSON, Integer, UniqueConstraint
+    ForeignKey, JSON, Integer, UniqueConstraint, Index
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
@@ -137,3 +137,61 @@ class ContentRecommendation(Base):
     
     def __repr__(self) -> str:
         return f"<ContentRecommendation(title={self.title}, platform={self.platform})>"
+
+
+class UserSession(Base):
+    """User session management"""
+    __tablename__ = "user_sessions"
+    
+    session_id = Column(String(255), primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    last_accessed = Column(DateTime(timezone=True), server_default=func.now())
+    status = Column(String(20), default="active")  # active, expired, revoked
+    ip_address = Column(String(45))  # IPv6 compatible
+    user_agent = Column(Text)
+    session_metadata = Column(JSON, default=dict)
+    
+    # Relationship
+    user = relationship("User")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_user_sessions_user_id', 'user_id'),
+        Index('idx_user_sessions_expires_at', 'expires_at'),
+        Index('idx_user_sessions_status', 'status'),
+    )
+    
+    def __repr__(self) -> str:
+        return f"<UserSession(session_id={self.session_id}, user_id={self.user_id}, status={self.status})>"
+
+
+class APIKey(Base):
+    """API key management"""
+    __tablename__ = "api_keys"
+    
+    key_id = Column(String(255), primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    key_hash = Column(String(255), nullable=False)  # Hashed API key
+    name = Column(String(100), nullable=False)  # Human-readable name
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True))
+    last_used = Column(DateTime(timezone=True))
+    is_active = Column(Boolean, default=True)
+    permissions = Column(JSON, default=list)  # List of permissions
+    usage_count = Column(Integer, default=0)
+    rate_limit_per_minute = Column(Integer)
+    
+    # Relationship
+    user = relationship("User")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_api_keys_user_id', 'user_id'),
+        Index('idx_api_keys_is_active', 'is_active'),
+        Index('idx_api_keys_expires_at', 'expires_at'),
+    )
+    
+    def __repr__(self) -> str:
+        return f"<APIKey(key_id={self.key_id}, name={self.name}, is_active={self.is_active})>"
