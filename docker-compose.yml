@@ -26,6 +26,11 @@ services:
     restart: unless-stopped
     networks:
       - edagent-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edagent -d edagent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -59,3 +64,4 @@ volumes:
 networks:
   edagent-network:
     driver: bridge
+    name: edagent-network
