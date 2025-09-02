@@ -110,17 +110,55 @@ run_migrations() {
     
     cd "$PROJECT_ROOT"
     
-    # Start database service if not running
-    docker compose up -d db
+    # Start database and redis services
+    docker compose up -d db redis
     
-    # Wait for database to be ready
+    # Wait for database to be healthy
     log_info "Waiting for database to be ready..."
-    sleep 10
+    local max_attempts=60
+    local attempt=1
     
-    # Run migrations
-    docker compose run --rm edagent python -m alembic upgrade head
+    while [[ $attempt -le $max_attempts ]]; do
+        # Check if database service is healthy
+        if docker compose ps db | grep -q "healthy"; then
+            log_info "Database is healthy and ready"
+            break
+        elif docker compose exec -T db pg_isready -U edagent -d edagent > /dev/null 2>&1; then
+            log_info "Database is ready"
+            break
+        fi
+        
+        log_info "Database not ready, attempt $attempt/$max_attempts, waiting..."
+        sleep 3
+        ((attempt++))
+        
+        if [[ $attempt -gt $max_attempts ]]; then
+            log_error "Database failed to become ready after $max_attempts attempts"
+            log_error "Checking database logs..."
+            docker compose logs db
+            exit 1
+        fi
+    done
     
-    log_info "Database migrations completed"
+    # Run migrations with proper network connectivity
+    log_info "Running Alembic migrations..."
+    
+    # Try running migrations with explicit network first
+    if docker compose run --rm edagent python -m alembic upgrade head; then
+        log_info "Database migrations completed successfully"
+    else
+        log_warn "Migration failed, trying alternative approach..."
+        
+        # Alternative: run migrations from within the database network
+        if docker compose exec -T edagent python -m alembic upgrade head; then
+            log_info "Database migrations completed successfully (alternative method)"
+        else
+            log_error "Migration failed with both methods"
+            log_error "Checking application logs..."
+            docker compose logs edagent
+            exit 1
+        fi
+    fi
 }
 
 # Deploy application

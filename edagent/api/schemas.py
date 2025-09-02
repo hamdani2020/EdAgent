@@ -102,10 +102,40 @@ class UserContextSchema(BaseModel):
 
 
 class CreateUserRequest(BaseModel):
-    """Request schema for creating a user"""
-    user_id: str = Field(..., description="Unique user identifier")
+    """Request schema for creating a user (registration)"""
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., min_length=8, description="User password (minimum 8 characters)")
+    name: Optional[str] = Field(None, description="User's full name")
     career_goals: List[str] = Field(default_factory=list)
     learning_preferences: Optional[UserPreferencesSchema] = None
+    
+    @validator('email')
+    def validate_email(cls, v):
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v):
+            raise ValueError('Invalid email format')
+        return v.lower()
+
+
+class LoginRequest(BaseModel):
+    """Request schema for user login"""
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+    
+    @validator('email')
+    def validate_email(cls, v):
+        return v.lower()
+
+
+class LoginResponse(BaseModel):
+    """Response schema for user login"""
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
+    user_id: str = Field(..., description="User ID")
+    email: str = Field(..., description="User email")
+    name: Optional[str] = Field(None, description="User name")
+    expires_at: datetime = Field(..., description="Token expiration time")
 
 
 class UpdateUserPreferencesRequest(BaseModel):

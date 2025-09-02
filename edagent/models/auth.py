@@ -3,7 +3,7 @@ Authentication and session models for EdAgent
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from enum import Enum
 import uuid
@@ -31,19 +31,32 @@ class UserSession:
     
     def is_valid(self) -> bool:
         """Check if session is valid and not expired"""
+        now = datetime.now(timezone.utc)
+        # Handle both timezone-aware and naive datetimes
+        expires_at = self.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
         return (
             self.status == SessionStatus.ACTIVE and
-            self.expires_at > datetime.utcnow()
+            expires_at > now
         )
     
     def is_expired(self) -> bool:
         """Check if session is expired"""
-        return self.expires_at <= datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        # Handle both timezone-aware and naive datetimes
+        expires_at = self.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+        return expires_at <= now
     
     def refresh(self, expire_minutes: int = 1440) -> None:
         """Refresh session expiration time"""
-        self.expires_at = datetime.utcnow() + timedelta(minutes=expire_minutes)
-        self.last_accessed = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        self.expires_at = now + timedelta(minutes=expire_minutes)
+        self.last_accessed = now
 
 
 @dataclass
@@ -66,15 +79,22 @@ class APIKey:
         if not self.is_active:
             return False
         
-        if self.expires_at and self.expires_at <= datetime.utcnow():
-            return False
+        if self.expires_at:
+            now = datetime.now(timezone.utc)
+            # Handle both timezone-aware and naive datetimes
+            expires_at = self.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            
+            if expires_at <= now:
+                return False
         
         return True
     
     def increment_usage(self) -> None:
         """Increment usage counter and update last used timestamp"""
         self.usage_count += 1
-        self.last_used = datetime.utcnow()
+        self.last_used = datetime.now(timezone.utc)
 
 
 @dataclass

@@ -87,7 +87,7 @@ def setup_environment():
     env_vars = {
         "EDAGENT_API_URL": "http://localhost:8000/api/v1",
         "EDAGENT_WS_URL": "ws://localhost:8000/api/v1/ws",
-        "USE_MOCK_DATA": "true"
+        "USE_MOCK_DATA": "false"
     }
     
     for var, default_value in env_vars.items():
