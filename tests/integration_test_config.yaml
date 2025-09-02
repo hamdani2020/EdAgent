@@ -1,0 +1,191 @@
+# Integration Test Configuration for EdAgent
+# This file defines test environments, thresholds, and execution parameters
+
+test_environments:
+  development:
+    database_url: "sqlite:///test_edagent_dev.db"
+    redis_url: "redis://localhost:6379/1"
+    gemini_api_key: "test_key_dev"
+    youtube_api_key: "test_key_dev"
+    log_level: "DEBUG"
+    
+  ci:
+    database_url: "sqlite:///:memory:"
+    redis_url: "redis://localhost:6379/2"
+    gemini_api_key: "${GEMINI_API_KEY_TEST}"
+    youtube_api_key: "${YOUTUBE_API_KEY_TEST}"
+    log_level: "WARNING"
+    
+  staging:
+    database_url: "postgresql://test_user:test_pass@localhost:5432/edagent_test"
+    redis_url: "redis://localhost:6379/3"
+    gemini_api_key: "${GEMINI_API_KEY_STAGING}"
+    youtube_api_key: "${YOUTUBE_API_KEY_STAGING}"
+    log_level: "INFO"
+
+performance_thresholds:
+  response_times:
+    health_endpoint: 0.5  # seconds
+    conversation_endpoint: 3.0
+    learning_path_endpoint: 5.0
+    authentication_endpoint: 2.0
+    content_recommendation: 4.0
+    
+  success_rates:
+    minimum_success_rate: 0.85
+    critical_endpoints_success_rate: 0.95
+    
+  throughput:
+    health_endpoint_rps: 100  # requests per second
+    conversation_endpoint_rps: 20
+    authentication_endpoint_rps: 50
+    
+  concurrent_users:
+    light_load: 10
+    moderate_load: 50
+    heavy_load: 100
+    stress_test_max: 200
+    
+  memory_usage:
+    max_memory_increase_mb: 150
+    memory_leak_threshold_mb: 200
+
+load_test_scenarios:
+  smoke_test:
+    duration: 30  # seconds
+    concurrent_users: 5
+    ramp_up_time: 5
+    
+  load_test:
+    duration: 300  # 5 minutes
+    concurrent_users: 25
+    ramp_up_time: 30
+    
+  stress_test:
+    duration: 600  # 10 minutes
+    max_concurrent_users: 100
+    step_size: 10
+    step_duration: 60
+    
+  spike_test:
+    baseline_users: 10
+    spike_users: 50
+    spike_duration: 30
+    recovery_time: 60
+
+test_data_settings:
+  user_contexts:
+    beginner_users: 20
+    intermediate_users: 15
+    advanced_users: 10
+    
+  learning_paths:
+    web_development_paths: 5
+    data_science_paths: 5
+    mobile_development_paths: 3
+    
+  conversations:
+    short_conversations: 50  # 1-5 messages
+    medium_conversations: 30  # 6-15 messages
+    long_conversations: 20   # 16+ messages
+    
+  content_recommendations:
+    free_content_ratio: 0.7
+    paid_content_ratio: 0.3
+    platforms: ["YouTube", "Coursera", "Udemy", "FreeCodeCamp", "Khan Academy"]
+
+test_execution:
+  timeouts:
+    unit_test_timeout: 30
+    integration_test_timeout: 120
+    load_test_timeout: 900
+    
+  retries:
+    flaky_test_retries: 2
+    network_test_retries: 3
+    
+  parallel_execution:
+    max_workers: 4
+    enable_parallel_suites: false  # Set to true for faster execution
+    
+  cleanup:
+    auto_cleanup_test_data: true
+    preserve_failed_test_data: true
+    cleanup_timeout: 60
+
+reporting:
+  formats: ["json", "html", "junit"]
+  include_performance_metrics: true
+  include_coverage_report: true
+  save_test_artifacts: true
+  
+  thresholds:
+    minimum_test_coverage: 0.80
+    critical_path_coverage: 0.95
+    
+  notifications:
+    slack_webhook: "${SLACK_WEBHOOK_URL}"
+    email_recipients: []
+    notify_on_failure: true
+    notify_on_success: false
+
+mock_services:
+  gemini_api:
+    enable_mocking: true
+    response_delay: 0.1  # seconds
+    failure_rate: 0.05   # 5% failure rate for testing
+    
+  youtube_api:
+    enable_mocking: true
+    response_delay: 0.05
+    failure_rate: 0.02
+    
+  external_apis:
+    enable_mocking: true
+    default_timeout: 10
+    
+database_testing:
+  use_transactions: true
+  rollback_after_test: true
+  connection_pool_size: 10
+  
+  migration_testing:
+    test_migrations: true
+    test_rollbacks: true
+    
+  data_integrity:
+    check_foreign_keys: true
+    validate_constraints: true
+
+security_testing:
+  authentication:
+    test_invalid_tokens: true
+    test_expired_tokens: true
+    test_malformed_requests: true
+    
+  authorization:
+    test_permission_boundaries: true
+    test_role_escalation: false  # Requires special setup
+    
+  input_validation:
+    test_sql_injection: true
+    test_xss_prevention: true
+    test_large_payloads: true
+    
+  rate_limiting:
+    test_rate_limits: true
+    requests_per_minute: 100
+
+feature_flags:
+  enable_ai_integration_tests: true
+  enable_content_recommendation_tests: true
+  enable_websocket_tests: true
+  enable_privacy_tests: true
+  enable_performance_tests: true
+  enable_load_tests: false  # Disabled by default due to resource usage
+  enable_security_tests: true
+  
+  experimental_features:
+    enable_advanced_analytics_tests: false
+    enable_ml_model_tests: false
+    enable_real_api_tests: false  # Use real APIs instead of mocks
