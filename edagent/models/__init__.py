@@ -15,6 +15,10 @@ from .auth import (
     UserSession, APIKey, AuthenticationRequest, AuthenticationResponse,
     TokenValidationResult, SessionStatus
 )
+from .privacy import (
+    DataExportRequest, DataExportResult, DataDeletionRequest, DataDeletionResult,
+    AuditLogEntry, UserDataSummary, PrivacySettings, ConsentRecord, PrivacyAction
+)
 
 __all__ = [
     "UserContext",
@@ -47,4 +51,13 @@ __all__ = [
     "AuthenticationResponse",
     "TokenValidationResult",
     "SessionStatus",
+    "DataExportRequest",
+    "DataExportResult",
+    "DataDeletionRequest",
+    "DataDeletionResult",
+    "AuditLogEntry",
+    "UserDataSummary",
+    "PrivacySettings",
+    "ConsentRecord",
+    "PrivacyAction",
 ]

@@ -16,6 +16,7 @@ from ..database.connection import db_manager
 from .middleware import RateLimitMiddleware, LoggingMiddleware, AuthenticationMiddleware, InputSanitizationMiddleware
 from .endpoints import conversation_router, user_router, assessment_router, learning_router
 from .endpoints.auth import router as auth_router
+from .endpoints.privacy import router as privacy_router
 from .websocket import websocket_router
 from .exceptions import setup_exception_handlers
 
@@ -146,6 +147,12 @@ def setup_routers(app: FastAPI) -> None:
         learning_router,
         prefix="/api/v1/learning",
         tags=["Learning Paths"]
+    )
+    
+    app.include_router(
+        privacy_router,
+        prefix="/api/v1/privacy",
+        tags=["Privacy"]
     )
     
     # Include WebSocket router
