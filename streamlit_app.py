@@ -18,7 +18,7 @@ from streamlit_chat import message
 import time
 
 # Import custom modules
-from streamlit_config import StreamlitConfig, MOCK_DATA, get_mock_data, is_feature_enabled
+from streamlit_config import StreamlitConfig, is_feature_enabled
 from streamlit_websocket import initialize_websocket, connect_websocket, send_websocket_message, get_websocket_response
 from streamlit_components import (
     render_skill_assessment_widget, render_learning_path_builder, 
@@ -227,6 +227,20 @@ class EdAgentAPI:
         except Exception as e:
             st.error(f"Failed to get privacy settings: {str(e)}")
             return {}
+    
+    def send_chat_message(self, user_id: str, message: str) -> Dict[str, Any]:
+        """Send a chat message and get AI response"""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/conversations/message",
+                json={"user_id": user_id, "message": message},
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            st.error(f"Failed to send chat message: {str(e)}")
+            return {"message": "I'm sorry, I'm having trouble connecting to the AI service right now. Please try again later."}
 
 # Initialize API client
 api = EdAgentAPI(API_BASE_URL)
@@ -477,7 +491,7 @@ def main_dashboard():
     st.markdown(f'<h1 class="main-header">🎓 Welcome back, {welcome_name}!</h1>', unsafe_allow_html=True)
     
     # Show profile setup prompt for new users
-    if not st.session_state.get("user_preferences") and not StreamlitConfig.USE_MOCK_DATA:
+    if not st.session_state.get("user_preferences"):
         st.info("💡 **Tip:** Complete your profile setup to get personalized recommendations!")
         if st.button("Set Up Profile", key="setup_profile_btn"):
             st.session_state.show_profile_setup = True
@@ -529,9 +543,13 @@ def show_chat_interface():
                 st.session_state.ws_connected = True
                 st.success("🔗 Connected to real-time chat!")
     
-    # Load mock messages if using mock data
-    if StreamlitConfig.USE_MOCK_DATA and not st.session_state.chat_messages:
-        st.session_state.chat_messages = get_mock_data("chat_messages")
+    # Initialize empty chat if no messages exist
+    if not st.session_state.chat_messages:
+        st.session_state.chat_messages = [{
+            "role": "assistant",
+            "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+            "timestamp": datetime.now()
+        }]
     
     # Chat container with custom styling
     with st.container():
@@ -557,39 +575,22 @@ def show_chat_interface():
             "timestamp": datetime.now()
         })
         
-        # Try WebSocket first, fallback to mock response
-        response_sent = False
-        
-        if is_feature_enabled("websocket_chat") and st.session_state.get("ws_connected", False):
-            if send_websocket_message(user_input):
-                with st.spinner("EdAgent is thinking..."):
-                    # Wait for WebSocket response
-                    for _ in range(10):  # Wait up to 5 seconds
-                        time.sleep(0.5)
-                        ws_response = get_websocket_response()
-                        if ws_response:
-                            st.session_state.chat_messages.append({
-                                "role": "assistant",
-                                "content": ws_response.get("content", "I received your message!"),
-                                "timestamp": datetime.now()
-                            })
-                            response_sent = True
-                            break
-        
-        # Fallback to mock response
-        if not response_sent:
-            with st.spinner("EdAgent is thinking..."):
-                time.sleep(1)  # Simulate processing time
-                
-                # Generate intelligent response based on input
-                response = generate_mock_response(user_input)
-                
-                # Add AI response
-                st.session_state.chat_messages.append({
-                    "role": "assistant",
-                    "content": response,
-                    "timestamp": datetime.now()
-                })
+        # Get AI response
+        with st.spinner("EdAgent is thinking..."):
+            if st.session_state.user_id:
+                # Try to get real AI response from API
+                chat_response = api.send_chat_message(st.session_state.user_id, user_input)
+                response_content = chat_response.get("message", "I'm sorry, I couldn't process your message right now.")
+            else:
+                # For non-authenticated users, provide a helpful response
+                response_content = "I'd be happy to help! However, to provide personalized assistance, please login or register first. I can help you with career planning, skill assessments, learning paths, and more once you're authenticated."
+            
+            # Add AI response
+            st.session_state.chat_messages.append({
+                "role": "assistant", 
+                "content": response_content,
+                "timestamp": datetime.now()
+            })
         
         st.rerun()
     
@@ -617,49 +618,7 @@ def show_chat_interface():
             add_chat_message("assistant", "Let's prepare for your interviews! What type of role are you interviewing for?")
             st.rerun()
 
-def generate_mock_response(user_input: str) -> str:
-    """Generate intelligent mock responses based on user input"""
-    user_input_lower = user_input.lower()
-    
-    # Assessment-related responses
-    if any(word in user_input_lower for word in ["assessment", "test", "evaluate", "skill"]):
-        return "I'd be happy to help you assess your skills! What area would you like to focus on? For example: programming, data science, marketing, or design? I can create a comprehensive assessment that will help identify your current level and areas for improvement."
-    
-    # Learning path responses
-    elif any(word in user_input_lower for word in ["learning path", "roadmap", "plan", "study"]):
-        return "Great! I can create a personalized learning path for you. What's your career goal? For example: 'I want to become a web developer' or 'I want to learn data analysis'. I'll break it down into manageable milestones with specific resources and timelines."
-    
-    # Resume-related responses
-    elif any(word in user_input_lower for word in ["resume", "cv", "job application"]):
-        return "I can help you improve your resume! Please share your current resume or tell me about your experience, and I'll provide specific feedback and suggestions. I can help with formatting, content optimization, ATS compatibility, and tailoring for specific roles."
-    
-    # Interview preparation
-    elif any(word in user_input_lower for word in ["interview", "job interview", "preparation"]):
-        return "Let's prepare for your interviews! What type of role are you interviewing for? I can help you practice common questions, provide industry-specific guidance, and give you tips for both technical and behavioral interviews."
-    
-    # Career change
-    elif any(word in user_input_lower for word in ["career change", "transition", "switch"]):
-        return "Career transitions can be exciting! What field are you looking to move into? I can help you identify transferable skills, create a transition plan, and recommend resources to bridge any skill gaps. What's your current background and target role?"
-    
-    # Programming/technical
-    elif any(word in user_input_lower for word in ["programming", "coding", "developer", "software"]):
-        return "Programming is a fantastic skill to develop! Are you interested in web development, mobile apps, data science, or something else? I can recommend learning paths for different programming languages and help you build a portfolio of projects."
-    
-    # Data science
-    elif any(word in user_input_lower for word in ["data science", "machine learning", "ai", "analytics"]):
-        return "Data science is a rapidly growing field! What's your background with mathematics, statistics, or programming? I can create a customized learning path that covers Python/R, statistics, machine learning, and practical projects to build your portfolio."
-    
-    # General career advice
-    elif any(word in user_input_lower for word in ["career", "job", "work", "professional"]):
-        return "I'm here to help with your career development! Whether you're looking to advance in your current field, change careers, or develop new skills, I can provide personalized guidance. What specific career goals or challenges are you facing?"
-    
-    # Greeting responses
-    elif any(word in user_input_lower for word in ["hello", "hi", "hey", "good morning", "good afternoon"]):
-        return "Hello! I'm EdAgent, your AI career coach. I'm here to help you achieve your career goals through personalized learning paths, skill assessments, and career guidance. What would you like to work on today?"
-    
-    # Default response
-    else:
-        return f"Thanks for your message! I'm here to help with your career development. I can assist with skill assessments, creating learning paths, resume improvement, interview preparation, and career planning. What specific area would you like to focus on?"
+
 
 def add_chat_message(role: str, content: str):
     """Add a message to the chat history"""
@@ -703,31 +662,20 @@ def show_assessments():
     with col2:
         st.subheader("Assessment History")
         
-        # Use mock data if available
-        if StreamlitConfig.USE_MOCK_DATA:
-            assessments = get_mock_data("assessments")
-            if assessments:
-                assessment_data = {
-                    "Assessment": [a["skill_area"] for a in assessments],
-                    "Date": [a["date"] for a in assessments],
-                    "Score": [a["score"] for a in assessments],
-                    "Level": [a["level"] for a in assessments]
-                }
-            else:
-                assessment_data = {
-                    "Assessment": ["Python Programming", "Web Development", "Data Science"],
-                    "Date": ["2024-01-15", "2024-01-10", "2024-01-05"],
-                    "Score": [85, 72, 90],
-                    "Level": ["Intermediate", "Beginner", "Advanced"]
-                }
+        # Show assessment history from API
+        if st.session_state.user_id:
+            # TODO: Implement API call to get user assessments
+            st.info("Assessment history will be loaded from your profile.")
         else:
-            # Try to get real data
-            assessment_data = {
-                "Assessment": ["Python Programming", "Web Development", "Data Science"],
-                "Date": ["2024-01-15", "2024-01-10", "2024-01-05"],
-                "Score": [85, 72, 90],
-                "Level": ["Intermediate", "Beginner", "Advanced"]
-            }
+            st.info("Please login to view your assessment history.")
+            
+        # Show placeholder assessment data for demonstration
+        assessment_data = {
+            "Assessment": ["Python Programming", "Web Development", "Data Science"],
+            "Date": ["2024-01-15", "2024-01-10", "2024-01-05"],
+            "Score": [85, 72, 90],
+            "Level": ["Intermediate", "Beginner", "Advanced"]
+        }
         
         df = pd.DataFrame(assessment_data)
         st.dataframe(df, use_container_width=True)
@@ -785,9 +733,11 @@ def show_learning_paths():
     with col2:
         st.subheader("Your Learning Paths")
         
-        # Load mock data if available
-        if StreamlitConfig.USE_MOCK_DATA and not st.session_state.learning_paths:
-            st.session_state.learning_paths = get_mock_data("learning_paths")
+        # Load learning paths from API
+        if st.session_state.user_id and not st.session_state.learning_paths:
+            paths_data = api.get_user_learning_paths(st.session_state.user_id)
+            if paths_data and "learning_paths" in paths_data:
+                st.session_state.learning_paths = paths_data["learning_paths"]
         
         if not st.session_state.learning_paths:
             st.info("No learning paths yet. Create one to get started!")
@@ -824,18 +774,18 @@ def show_user_profile():
     """User profile management"""
     st.header("👤 User Profile")
     
-    # Load mock profile if using mock data
-    if StreamlitConfig.USE_MOCK_DATA and not st.session_state.user_profile:
-        st.session_state.user_profile = get_mock_data("user_profile")
+    # Load user profile from API if not already loaded
+    if st.session_state.user_id and not st.session_state.user_profile:
+        user_data = api.get_user(st.session_state.user_id)
+        if user_data and "user" in user_data:
+            st.session_state.user_profile = user_data["user"]
     
     if st.session_state.user_profile:
         profile = st.session_state.user_profile
         
-        # Progress dashboard
-        if StreamlitConfig.USE_MOCK_DATA:
-            analytics_data = get_mock_data("analytics")
-            render_progress_dashboard(analytics_data)
-            st.divider()
+        # Progress dashboard - TODO: Implement real analytics
+        st.info("📊 Analytics dashboard will show your learning progress and achievements.")
+        st.divider()
         
         col1, col2 = st.columns(2)
         
@@ -1067,88 +1017,89 @@ def show_analytics():
     """Analytics and progress tracking"""
     st.header("📈 Your Learning Analytics")
     
-    # Load analytics data
-    if StreamlitConfig.USE_MOCK_DATA:
-        analytics_data = get_mock_data("analytics")
-        user_profile = st.session_state.user_profile or get_mock_data("user_profile")
+    # Analytics dashboard - real implementation needed
+    if st.session_state.user_id:
+        st.info("📊 Your learning analytics will be displayed here once you start using the platform.")
         
-        # Render comprehensive progress dashboard
-        render_progress_dashboard(analytics_data)
-        
-        st.divider()
-        
-        # Resource recommendations
-        recommendations = get_mock_data("recommendations")
-        render_resource_recommendations(recommendations)
-        
+        # TODO: Implement real analytics API calls
+        # analytics_data = api.get_user_analytics(st.session_state.user_id)
+        # render_progress_dashboard(analytics_data)
     else:
-        # Mock analytics data for non-mock mode
-        col1, col2, col3, col4 = st.columns(4)
+        st.info("Please login to view your analytics.")
         
-        with col1:
-            st.metric("Total Assessments", "12", "+3")
+    st.divider()
         
-        with col2:
-            st.metric("Learning Paths", "5", "+1")
+    # TODO: Implement real recommendations API calls  
+    # recommendations = api.get_recommendations(st.session_state.user_id)
+    # render_resource_recommendations(recommendations)
+    
+    # Show sample analytics for demonstration
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Assessments", "12", "+3")
+    
+    with col2:
+        st.metric("Learning Paths", "5", "+1")
+    
+    with col3:
+        st.metric("Skills Improved", "8", "+2")
+    
+    with col4:
+        st.metric("Study Hours", "45", "+12")
+    
+    # Charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Progress over time
+        dates = pd.date_range(start='2024-01-01', end='2024-01-30', freq='D')
+        progress_data = pd.DataFrame({
+            'Date': dates,
+            'Progress': [i + (i % 7) * 2 for i in range(len(dates))]
+        })
         
-        with col3:
-            st.metric("Skills Improved", "8", "+2")
-        
-        with col4:
-            st.metric("Study Hours", "45", "+12")
-        
-        # Charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Progress over time
-            dates = pd.date_range(start='2024-01-01', end='2024-01-30', freq='D')
-            progress_data = pd.DataFrame({
-                'Date': dates,
-                'Progress': [i + (i % 7) * 2 for i in range(len(dates))]
-            })
-            
-            fig = px.line(progress_data, x='Date', y='Progress', 
-                         title='Learning Progress Over Time',
-                         color_discrete_sequence=['#1f77b4'])
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Skill distribution
-            skills_data = {
-                'Skill': ['Python', 'Web Dev', 'Data Science', 'ML', 'SQL'],
-                'Level': [85, 70, 60, 45, 80]
-            }
-            
-            fig = px.bar(skills_data, x='Skill', y='Level', 
-                        title='Current Skill Levels',
-                        color='Level',
-                        color_continuous_scale='viridis')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Activity heatmap
-        st.subheader("Activity Heatmap")
-        
-        # Generate mock activity data
-        import numpy as np
-        activity_data = np.random.randint(0, 10, size=(7, 24))
-        
-        fig = go.Figure(data=go.Heatmap(
-            z=activity_data,
-            x=[f"{i}:00" for i in range(24)],
-            y=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-            colorscale='Blues',
-            hoverongaps=False
-        ))
-        
-        fig.update_layout(
-            title='Weekly Activity Pattern',
-            xaxis_title='Hour of Day',
-            yaxis_title='Day of Week',
-            height=400
-        )
-        
+        fig = px.line(progress_data, x='Date', y='Progress', 
+                     title='Learning Progress Over Time',
+                     color_discrete_sequence=['#1f77b4'])
         st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Skill distribution
+        skills_data = {
+            'Skill': ['Python', 'Web Dev', 'Data Science', 'ML', 'SQL'],
+            'Level': [85, 70, 60, 45, 80]
+        }
+        
+        fig = px.bar(skills_data, x='Skill', y='Level', 
+                    title='Current Skill Levels',
+                    color='Level',
+                    color_continuous_scale='viridis')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Activity heatmap
+    st.subheader("Activity Heatmap")
+    
+    # Generate mock activity data
+    import numpy as np
+    activity_data = np.random.randint(0, 10, size=(7, 24))
+    
+    fig = go.Figure(data=go.Heatmap(
+        z=activity_data,
+        x=[f"{i}:00" for i in range(24)],
+        y=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        colorscale='Blues',
+        hoverongaps=False
+    ))
+    
+    fig.update_layout(
+        title='Weekly Activity Pattern',
+        xaxis_title='Hour of Day',
+        yaxis_title='Day of Week',
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
     
     # Additional analytics sections
     st.divider()

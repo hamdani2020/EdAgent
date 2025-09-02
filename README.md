@@ -40,9 +40,24 @@ edagent/
    ```
 
 3. Set up your environment variables in `.env`:
-   - `GEMINI_API_KEY`: Your Google Gemini API key
-   - `YOUTUBE_API_KEY`: Your YouTube Data API key
-   - `SECRET_KEY`: A secure secret key for session management
+   - `GEMINI_API_KEY`: Your Google Gemini API key ([Get it here](https://makersuite.google.com/app/apikey))
+   - `YOUTUBE_API_KEY`: Your YouTube Data API key ([Get it here](https://console.developers.google.com/))
+   - `SECRET_KEY`: A secure secret key for session management (generate with `openssl rand -hex 32`)
+
+### Getting API Keys
+
+#### Google Gemini API Key
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy the generated key to your `.env` file
+
+#### YouTube Data API Key
+1. Go to the [Google Cloud Console](https://console.developers.google.com/)
+2. Create a new project or select an existing one
+3. Enable the YouTube Data API v3
+4. Go to "Credentials" and create an API key
+5. Copy the key to your `.env` file
 
 ## Features
 
@@ -124,3 +139,24 @@ This project follows Python best practices:
 - Unit testing with pytest
 - Code formatting with black and isort
 - Linting with flake8 and mypy
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+If you encounter any issues or have questions, please:
+- Check the [documentation](docs/)
+- Search existing [issues](https://github.com/your-username/edagent/issues)
+- Create a new issue if needed
+
+## Acknowledgments
+
+- Google Gemini API for conversational AI capabilities
+- YouTube Data API for educational content discovery
+- The open source community for the amazing tools and libraries that make this project possible
