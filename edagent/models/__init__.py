@@ -11,6 +11,10 @@ from .interview import (
     InterviewQuestion, InterviewSession, InterviewFeedback, IndustryGuidance,
     InterviewType, DifficultyLevel, FeedbackType
 )
+from .auth import (
+    UserSession, APIKey, AuthenticationRequest, AuthenticationResponse,
+    TokenValidationResult, SessionStatus
+)
 
 __all__ = [
     "UserContext",
@@ -37,4 +41,10 @@ __all__ = [
     "InterviewType",
     "DifficultyLevel",
     "FeedbackType",
+    "UserSession",
+    "APIKey",
+    "AuthenticationRequest",
+    "AuthenticationResponse",
+    "TokenValidationResult",
+    "SessionStatus",
 ]

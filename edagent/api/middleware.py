@@ -150,3 +150,141 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         
         return response
+
+
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    """Authentication middleware for session and API key validation"""
+    
+    def __init__(self, app, auth_service=None):
+        super().__init__(app)
+        self.auth_service = auth_service
+        
+        # Paths that don't require authentication
+        self.public_paths = {
+            "/health",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/api/v1/auth/session",  # Session creation endpoint
+        }
+        
+        # Paths that require authentication
+        self.protected_paths = {
+            "/api/v1/conversations",
+            "/api/v1/users",
+            "/api/v1/assessments",
+            "/api/v1/learning",
+        }
+    
+    async def dispatch(self, request: Request, call_next):
+        """Process request with authentication"""
+        # Skip authentication for public paths
+        if self._is_public_path(request.url.path):
+            return await call_next(request)
+        
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
+        # Check if path requires authentication
+        if not self._requires_auth(request.url.path):
+            return await call_next(request)
+        
+        # Validate authentication
+        auth_result = await self._validate_authentication(request)
+        
+        if not auth_result.is_valid:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={
+                    "error": "Authentication required",
+                    "message": auth_result.error_message or "Invalid or missing authentication"
+                }
+            )
+        
+        # Add user info to request state
+        request.state.user_id = auth_result.user_id
+        request.state.session_id = auth_result.session_id
+        request.state.auth_session = auth_result.session
+        
+        return await call_next(request)
+    
+    def _is_public_path(self, path: str) -> bool:
+        """Check if path is public (no auth required)"""
+        return any(path.startswith(public_path) for public_path in self.public_paths)
+    
+    def _requires_auth(self, path: str) -> bool:
+        """Check if path requires authentication"""
+        return any(path.startswith(protected_path) for protected_path in self.protected_paths)
+    
+    async def _validate_authentication(self, request: Request):
+        """Validate authentication from request headers"""
+        from ..services.auth_service import AuthenticationService
+        
+        if not self.auth_service:
+            self.auth_service = AuthenticationService()
+        
+        # Check for session token in Authorization header
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+            return await self.auth_service.validate_session_token(token)
+        
+        # Check for API key in X-API-Key header
+        api_key = request.headers.get("X-API-Key")
+        if api_key:
+            return await self.auth_service.validate_api_key(api_key)
+        
+        # No valid authentication found
+        from ..models.auth import TokenValidationResult
+        return TokenValidationResult(
+            is_valid=False,
+            error_message="No valid authentication provided"
+        )
+
+
+class InputSanitizationMiddleware(BaseHTTPMiddleware):
+    """Input sanitization and validation middleware"""
+    
+    def __init__(self, app, max_content_length: int = 1024 * 1024):  # 1MB default
+        super().__init__(app)
+        self.max_content_length = max_content_length
+    
+    async def dispatch(self, request: Request, call_next):
+        """Sanitize and validate input"""
+        # Check content length
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > self.max_content_length:
+            return JSONResponse(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                content={
+                    "error": "Request too large",
+                    "message": f"Request body must be less than {self.max_content_length} bytes"
+                }
+            )
+        
+        # Validate content type for POST/PUT requests
+        if request.method in ["POST", "PUT", "PATCH"]:
+            content_type = request.headers.get("content-type", "")
+            if not content_type.startswith(("application/json", "multipart/form-data")):
+                return JSONResponse(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    content={
+                        "error": "Unsupported media type",
+                        "message": "Content-Type must be application/json or multipart/form-data"
+                    }
+                )
+        
+        # Add security headers to prevent common attacks
+        response = await call_next(request)
+        
+        # Prevent clickjacking
+        response.headers["X-Frame-Options"] = "DENY"
+        
+        # Prevent MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        
+        # Enable XSS protection
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        
+        return response
