@@ -6,7 +6,7 @@ import secrets
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -36,11 +36,12 @@ class AuthenticationService:
         
     def _generate_session_token(self, user_id: str, session_id: str) -> str:
         """Generate JWT session token"""
+        now = datetime.now(timezone.utc)
         payload = {
             "user_id": user_id,
             "session_id": session_id,
-            "iat": datetime.utcnow(),
-            "exp": datetime.utcnow() + timedelta(minutes=self.settings.session_expire_minutes)
+            "iat": now,
+            "exp": now + timedelta(minutes=self.settings.session_expire_minutes)
         }
         return jwt.encode(payload, self.settings.secret_key, algorithm=self.algorithm)
     
@@ -98,7 +99,7 @@ class AuthenticationService:
                 
                 # Generate session ID and token
                 session_id = secrets.token_urlsafe(32)
-                expires_at = datetime.utcnow() + timedelta(minutes=request.session_duration_minutes)
+                expires_at = datetime.now(timezone.utc) + timedelta(minutes=request.session_duration_minutes)
                 
                 # Create session record
                 db_user_session = DBUserSession(
@@ -211,7 +212,7 @@ class AuthenticationService:
         try:
             async with db_manager.get_session() as db_session:
                 # Update expired sessions
-                current_time = datetime.utcnow()
+                current_time = datetime.now(timezone.utc)
                 update_query = (
                     update(DBUserSession)
                     .where(
@@ -272,7 +273,7 @@ class AuthenticationService:
                 # Calculate expiration
                 expires_at = None
                 if expires_in_days:
-                    expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
+                    expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
                 
                 # Create API key record
                 db_api_key = DBAPIKey(
@@ -395,7 +396,7 @@ class AuthenticationService:
         update_query = (
             update(DBUserSession)
             .where(DBUserSession.session_id == session_id)
-            .values(last_accessed=datetime.utcnow())
+            .values(last_accessed=datetime.now(timezone.utc))
         )
         await db_session.execute(update_query)
         await db_session.commit()
@@ -407,7 +408,7 @@ class AuthenticationService:
             .where(DBAPIKey.key_id == key_id)
             .values(
                 usage_count=DBAPIKey.usage_count + 1,
-                last_used=datetime.utcnow()
+                last_used=datetime.now(timezone.utc)
             )
         )
         await db_session.execute(update_query)
