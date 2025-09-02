@@ -18,22 +18,56 @@ class DatabaseUtils:
     """Utility class for common database operations"""
     
     @staticmethod
-    async def create_user(session: AsyncSession, preferences: Optional[Dict[str, Any]] = None) -> User:
+    async def create_user(
+        session: AsyncSession, 
+        email: str,
+        password_hash: str,
+        name: Optional[str] = None,
+        preferences: Optional[Dict[str, Any]] = None
+    ) -> User:
         """
-        Create a new user with optional preferences
+        Create a new user with email and password
         
         Args:
             session: Database session
+            email: User email address
+            password_hash: Hashed password
+            name: User's full name
             preferences: User preferences dictionary
             
         Returns:
             Created user instance
         """
-        user = User(preferences=preferences or {})
+        user = User(
+            email=email,
+            password_hash=password_hash,
+            name=name,
+            preferences=preferences or {}
+        )
         session.add(user)
         await session.flush()  # Get the ID without committing
-        logger.info(f"Created new user with ID: {user.id}")
+        logger.info(f"Created new user with email: {email}")
         return user
+    
+    @staticmethod
+    async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]:
+        """
+        Get user by email address
+        
+        Args:
+            session: Database session
+            email: User email address
+            
+        Returns:
+            User instance or None if not found
+        """
+        from sqlalchemy import select
+        from .models import User
+        
+        result = await session.execute(
+            select(User).where(User.email == email.lower())
+        )
+        return result.scalar_one_or_none()
     
     @staticmethod
     async def get_user_by_id(session: AsyncSession, user_id) -> Optional[User]:

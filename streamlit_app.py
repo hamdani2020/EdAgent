@@ -88,23 +88,50 @@ class EdAgentAPI:
     def _get_headers(self) -> Dict[str, str]:
         """Get headers with authentication if available"""
         headers = {"Content-Type": "application/json"}
-        if "auth_token" in st.session_state:
-            headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+        if "access_token" in st.session_state:
+            headers["Authorization"] = f"Bearer {st.session_state.access_token}"
         return headers
     
-    def create_session(self, user_id: str) -> Dict[str, Any]:
-        """Create a new user session"""
+    def register_user(self, email: str, password: str, name: str) -> Dict[str, Any]:
+        """Register a new user with email/password"""
         try:
             response = self.session.post(
-                f"{self.base_url}/auth/session",
-                json={"user_id": user_id, "session_duration_minutes": 1440},
+                f"{self.base_url}/auth/register",
+                json={"email": email, "password": password, "name": name},
                 headers={"Content-Type": "application/json"}
             )
             response.raise_for_status()
             return response.json()
-        except Exception as e:
-            st.error(f"Failed to create session: {str(e)}")
+        except requests.exceptions.HTTPError as e:
+            error_detail = e.response.json().get("error", {}).get("message", str(e))
+            st.error(f"Registration failed: {error_detail}")
             return {}
+        except Exception as e:
+            st.error(f"Registration failed: {str(e)}")
+            return {}
+    
+    def login_user(self, email: str, password: str) -> Dict[str, Any]:
+        """Login user with email/password"""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/auth/login",
+                json={"email": email, "password": password},
+                headers={"Content-Type": "application/json"}
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            error_detail = e.response.json().get("error", {}).get("message", str(e))
+            st.error(f"Login failed: {error_detail}")
+            return {}
+        except Exception as e:
+            st.error(f"Login failed: {str(e)}")
+            return {}
+    
+    def create_session(self, user_id: str) -> Dict[str, Any]:
+        """Create a new user session (deprecated - using JWT tokens now)"""
+        # This method is kept for backward compatibility but not used
+        return {"session_token": st.session_state.get("access_token", "")}
     
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new user"""
@@ -208,8 +235,12 @@ def initialize_session_state():
     """Initialize session state variables"""
     if "user_id" not in st.session_state:
         st.session_state.user_id = None
-    if "auth_token" not in st.session_state:
-        st.session_state.auth_token = None
+    if "access_token" not in st.session_state:
+        st.session_state.access_token = None
+    if "user_email" not in st.session_state:
+        st.session_state.user_email = None
+    if "user_name" not in st.session_state:
+        st.session_state.user_name = None
     if "user_profile" not in st.session_state:
         st.session_state.user_profile = None
     if "chat_messages" not in st.session_state:
@@ -218,60 +249,135 @@ def initialize_session_state():
         st.session_state.current_assessment = None
     if "learning_paths" not in st.session_state:
         st.session_state.learning_paths = []
+    if "show_registration" not in st.session_state:
+        st.session_state.show_registration = False
 
 def authenticate_user():
-    """Handle user authentication"""
+    """Handle user authentication with email/password"""
     st.sidebar.header("🔐 Authentication")
     
     if st.session_state.user_id is None:
-        user_id = st.sidebar.text_input("Enter User ID:", placeholder="e.g., user123")
+        # Login/Register tabs
+        auth_tab = st.sidebar.radio("Choose action:", ["Login", "Register"])
         
-        col1, col2 = st.sidebar.columns(2)
+        if auth_tab == "Login":
+            with st.sidebar.form("login_form"):
+                st.subheader("Login")
+                email = st.text_input("Email:", placeholder="your.email@example.com")
+                password = st.text_input("Password:", type="password")
+                
+                login_submitted = st.form_submit_button("Login")
+                
+                if login_submitted:
+                    if email and password:
+                        login_result = api.login_user(email, password)
+                        if login_result:
+                            # Store authentication data
+                            st.session_state.access_token = login_result.get("access_token")
+                            st.session_state.user_id = login_result.get("user_id")
+                            st.session_state.user_email = login_result.get("email")
+                            
+                            # Try to get user profile
+                            user_data = api.get_user(st.session_state.user_id)
+                            if user_data:
+                                st.session_state.user_profile = user_data.get("user")
+                            
+                            st.sidebar.success("✅ Logged in successfully!")
+                            st.rerun()
+                    else:
+                        st.sidebar.error("Please enter both email and password")
         
-        with col1:
-            if st.button("Login", key="login_btn"):
-                if user_id:
-                    # Create session
-                    session_data = api.create_session(user_id)
-                    if session_data:
-                        st.session_state.user_id = user_id
-                        st.session_state.auth_token = session_data.get("session_token")
-                        
-                        # Try to get user profile
-                        user_data = api.get_user(user_id)
-                        if user_data:
-                            st.session_state.user_profile = user_data.get("user")
-                        
-                        st.sidebar.success("✅ Logged in successfully!")
-                        st.rerun()
-                else:
-                    st.sidebar.error("Please enter a User ID")
-        
-        with col2:
-            if st.button("Register", key="register_btn"):
-                if user_id:
-                    # Show registration form
-                    st.session_state.show_registration = True
-                    st.session_state.register_user_id = user_id
-                else:
-                    st.sidebar.error("Please enter a User ID")
+        else:  # Register
+            with st.sidebar.form("register_form"):
+                st.subheader("Register")
+                name = st.text_input("Full Name:", placeholder="John Doe")
+                email = st.text_input("Email:", placeholder="your.email@example.com")
+                password = st.text_input("Password:", type="password", 
+                                       help="Must contain uppercase, lowercase, number, and special character")
+                
+                # Password strength indicator
+                if password:
+                    strength_score = 0
+                    requirements = []
+                    
+                    if len(password) >= 8:
+                        strength_score += 1
+                    else:
+                        requirements.append("At least 8 characters")
+                    
+                    if any(c.isupper() for c in password):
+                        strength_score += 1
+                    else:
+                        requirements.append("One uppercase letter")
+                    
+                    if any(c.islower() for c in password):
+                        strength_score += 1
+                    else:
+                        requirements.append("One lowercase letter")
+                    
+                    if any(c.isdigit() for c in password):
+                        strength_score += 1
+                    else:
+                        requirements.append("One number")
+                    
+                    if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+                        strength_score += 1
+                    else:
+                        requirements.append("One special character")
+                    
+                    # Show strength
+                    if strength_score < 3:
+                        st.error(f"Weak password. Missing: {', '.join(requirements)}")
+                    elif strength_score < 5:
+                        st.warning(f"Medium password. Missing: {', '.join(requirements)}")
+                    else:
+                        st.success("Strong password! ✓")
+                confirm_password = st.text_input("Confirm Password:", type="password")
+                
+                register_submitted = st.form_submit_button("Register")
+                
+                if register_submitted:
+                    if name and email and password and confirm_password:
+                        if password != confirm_password:
+                            st.sidebar.error("Passwords do not match")
+                        else:
+                            register_result = api.register_user(email, password, name)
+                            if register_result:
+                                # Store authentication data
+                                st.session_state.access_token = register_result.get("access_token")
+                                st.session_state.user_id = register_result.get("user_id")
+                                st.session_state.user_email = register_result.get("email")
+                                st.session_state.user_name = name
+                                
+                                st.sidebar.success("✅ Registered and logged in successfully!")
+                                st.rerun()
+                    else:
+                        st.sidebar.error("Please fill in all fields")
     
     else:
-        st.sidebar.success(f"👤 Logged in as: {st.session_state.user_id}")
+        # Show logged in user info
+        user_display = st.session_state.user_email or st.session_state.user_name or st.session_state.user_id
+        st.sidebar.success(f"👤 Logged in as: {user_display}")
+        
+        # User menu
+        with st.sidebar.expander("Account", expanded=False):
+            st.write(f"**Email:** {st.session_state.user_email}")
+            st.write(f"**Name:** {st.session_state.user_name}")
+            st.write(f"**User ID:** {st.session_state.user_id}")
+        
         if st.sidebar.button("Logout", key="logout_btn"):
             # Clear session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
 
-def show_registration_form():
-    """Show user registration form"""
-    if st.session_state.get("show_registration", False):
-        st.header("📝 User Registration")
+def show_profile_setup():
+    """Show profile setup form for new users"""
+    if st.session_state.get("show_profile_setup", False):
+        st.header("📝 Complete Your Profile")
+        st.write("Welcome! Let's set up your learning profile to provide personalized recommendations.")
         
-        with st.form("registration_form"):
-            user_id = st.text_input("User ID:", value=st.session_state.get("register_user_id", ""))
-            
+        with st.form("profile_setup_form"):
             st.subheader("Career Goals")
             career_goals = st.text_area(
                 "What are your career goals? (one per line)",
@@ -280,42 +386,50 @@ def show_registration_form():
             career_goals = [goal.strip() for goal in career_goals if goal.strip()]
             
             st.subheader("Learning Preferences")
-            learning_style = st.selectbox(
-                "Preferred Learning Style:",
-                ["visual", "auditory", "kinesthetic", "reading"]
-            )
+            col1, col2 = st.columns(2)
             
-            time_commitment = st.selectbox(
-                "Time Commitment (hours per week):",
-                ["1-5", "5-10", "10-20", "20+"]
-            )
+            with col1:
+                learning_style = st.selectbox(
+                    "Preferred Learning Style:",
+                    ["visual", "auditory", "kinesthetic", "reading"]
+                )
+                
+                time_commitment = st.selectbox(
+                    "Time Commitment (hours per week):",
+                    ["1-5", "5-10", "10-20", "20+"]
+                )
+                
+                budget_preference = st.selectbox(
+                    "Budget Preference:",
+                    ["free", "low_cost", "moderate", "premium"]
+                )
             
-            budget_preference = st.selectbox(
-                "Budget Preference:",
-                ["free", "low_cost", "moderate", "premium"]
-            )
+            with col2:
+                preferred_platforms = st.multiselect(
+                    "Preferred Learning Platforms:",
+                    ["youtube", "coursera", "udemy", "edx", "khan_academy", "codecademy"]
+                )
+                
+                content_types = st.multiselect(
+                    "Preferred Content Types:",
+                    ["video", "text", "interactive", "project_based", "quiz"]
+                )
+                
+                difficulty_preference = st.selectbox(
+                    "Difficulty Preference:",
+                    ["beginner", "intermediate", "advanced", "mixed"]
+                )
             
-            preferred_platforms = st.multiselect(
-                "Preferred Learning Platforms:",
-                ["youtube", "coursera", "udemy", "edx", "khan_academy", "codecademy"]
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                submitted = st.form_submit_button("Save Profile", type="primary")
+            with col2:
+                skip = st.form_submit_button("Skip for Now")
             
-            content_types = st.multiselect(
-                "Preferred Content Types:",
-                ["video", "text", "interactive", "project_based", "quiz"]
-            )
-            
-            difficulty_preference = st.selectbox(
-                "Difficulty Preference:",
-                ["beginner", "intermediate", "advanced", "mixed"]
-            )
-            
-            submitted = st.form_submit_button("Register")
-            
-            if submitted:
-                if user_id and career_goals:
-                    user_data = {
-                        "user_id": user_id,
+            if submitted or skip:
+                if submitted and career_goals:
+                    # Update user profile with preferences
+                    preferences = {
                         "career_goals": career_goals,
                         "learning_preferences": {
                             "learning_style": learning_style,
@@ -327,20 +441,12 @@ def show_registration_form():
                         }
                     }
                     
-                    result = api.create_user(user_data)
-                    if result:
-                        st.success("✅ User registered successfully!")
-                        
-                        # Create session
-                        session_data = api.create_session(user_id)
-                        if session_data:
-                            st.session_state.user_id = user_id
-                            st.session_state.auth_token = session_data.get("session_token")
-                            st.session_state.user_profile = result.get("user")
-                            st.session_state.show_registration = False
-                            st.rerun()
-                else:
-                    st.error("Please fill in all required fields")
+                    # Store preferences in session state
+                    st.session_state.user_preferences = preferences
+                    st.success("✅ Profile saved successfully!")
+                
+                st.session_state.show_profile_setup = False
+                st.rerun()
 
 def main_dashboard():
     """Main dashboard view"""
@@ -356,8 +462,26 @@ def main_dashboard():
         - 🔍 Find the best educational resources
         
         **Please login or register to get started!**
+        
+        ### New to EdAgent?
+        Create an account with your email and password to:
+        - Save your progress across sessions
+        - Get personalized recommendations
+        - Track your learning journey
+        - Access all premium features
         """)
         return
+    
+    # Welcome message for authenticated users
+    welcome_name = st.session_state.user_name or st.session_state.user_email.split('@')[0] if st.session_state.user_email else "there"
+    st.markdown(f'<h1 class="main-header">🎓 Welcome back, {welcome_name}!</h1>', unsafe_allow_html=True)
+    
+    # Show profile setup prompt for new users
+    if not st.session_state.get("user_preferences") and not StreamlitConfig.USE_MOCK_DATA:
+        st.info("💡 **Tip:** Complete your profile setup to get personalized recommendations!")
+        if st.button("Set Up Profile", key="setup_profile_btn"):
+            st.session_state.show_profile_setup = True
+            st.rerun()
     
     st.markdown('<h1 class="main-header">🎓 EdAgent Dashboard</h1>', unsafe_allow_html=True)
     
@@ -396,12 +520,12 @@ def show_chat_interface():
     st.header("💬 Chat with EdAgent")
     
     # Initialize WebSocket if enabled and user is authenticated
-    if is_feature_enabled("websocket_chat") and st.session_state.user_id and st.session_state.auth_token:
+    if is_feature_enabled("websocket_chat") and st.session_state.user_id and st.session_state.access_token:
         if "ws_connected" not in st.session_state:
             st.session_state.ws_connected = False
         
         if not st.session_state.ws_connected:
-            if connect_websocket(st.session_state.user_id, st.session_state.auth_token):
+            if connect_websocket(st.session_state.user_id, st.session_state.access_token):
                 st.session_state.ws_connected = True
                 st.success("🔗 Connected to real-time chat!")
     
@@ -717,7 +841,9 @@ def show_user_profile():
         
         with col1:
             st.subheader("Basic Information")
-            st.write(f"**User ID:** {profile.get('user_id', 'N/A')}")
+            st.write(f"**Name:** {st.session_state.user_name or 'N/A'}")
+            st.write(f"**Email:** {st.session_state.user_email or 'N/A'}")
+            st.write(f"**User ID:** {profile.get('user_id', st.session_state.user_id)}")
             st.write(f"**Member Since:** {profile.get('created_at', 'N/A')}")
             st.write(f"**Last Active:** {profile.get('last_active', 'N/A')}")
             
@@ -1065,9 +1191,9 @@ def main():
     """Main application entry point"""
     initialize_session_state()
     
-    # Handle registration form
-    if st.session_state.get("show_registration", False):
-        show_registration_form()
+    # Handle profile setup for new users
+    if st.session_state.get("show_profile_setup", False):
+        show_profile_setup()
         return
     
     # Sidebar authentication

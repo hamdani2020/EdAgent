@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any
 from collections import defaultdict, deque
 from fastapi import Request, Response, HTTPException, status
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import asyncio
 
@@ -166,6 +167,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/openapi.json",
             "/api/v1/auth/session",  # Session creation endpoint
+            "/api/v1/auth/register",  # User registration endpoint
+            "/api/v1/auth/login",  # User login endpoint
         }
         
         # Paths that require authentication
@@ -179,7 +182,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Process request with authentication"""
         # Skip authentication for public paths
-        if self._is_public_path(request.url.path):
+        if self._is_public_path(request.url.path, request.method):
             return await call_next(request)
         
         # Skip authentication for OPTIONS requests (CORS preflight)
@@ -209,7 +212,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         
         return await call_next(request)
     
-    def _is_public_path(self, path: str) -> bool:
+    def _is_public_path(self, path: str, method: str = None) -> bool:
         """Check if path is public (no auth required)"""
         return any(path.startswith(public_path) for public_path in self.public_paths)
     

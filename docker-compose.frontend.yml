@@ -10,8 +10,10 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    depends_on:
+      - db
+      - redis
     volumes:
-      - ./edagent.db:/app/edagent.db
       - ./logs:/app/logs
     networks:
       - edagent-network
@@ -42,6 +44,36 @@ services:
       timeout: 10s
       retries: 3
 
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - edagent-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edagent -d edagent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - edagent-network
+
   # Nginx Reverse Proxy (Optional)
   nginx:
     image: nginx:alpine
@@ -63,5 +95,5 @@ networks:
     driver: bridge
 
 volumes:
-  edagent-data:
-    driver: local
+  postgres_data:
+  redis_data:

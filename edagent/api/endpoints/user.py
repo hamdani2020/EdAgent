@@ -30,63 +30,7 @@ router = APIRouter()
 from ..dependencies import get_user_context_manager
 
 
-@router.post("/", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(
-    request: CreateUserRequest,
-    user_context_manager: UserContextManager = Depends(get_user_context_manager)
-):
-    """
-    Create a new user profile
-    
-    - **user_id**: Unique identifier for the user
-    - **career_goals**: List of user's career goals
-    - **learning_preferences**: Optional learning preferences
-    """
-    try:
-        # Check if user already exists
-        existing_user = await user_context_manager.get_user_context(request.user_id)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"User with ID '{request.user_id}' already exists"
-            )
-        
-        # Prepare preferences for user creation
-        preferences_dict = None
-        if request.learning_preferences:
-            preferences = UserPreferences(
-                learning_style=request.learning_preferences.learning_style,
-                time_commitment=request.learning_preferences.time_commitment,
-                budget_preference=request.learning_preferences.budget_preference,
-                preferred_platforms=request.learning_preferences.preferred_platforms,
-                content_types=request.learning_preferences.content_types,
-                difficulty_preference=request.learning_preferences.difficulty_preference
-            )
-            preferences_dict = preferences.to_dict()
-        
-        # Create new user context with preferences
-        user_context = await user_context_manager.create_user_context(request.user_id, preferences_dict)
-        
-        # Update career goals if provided
-        if request.career_goals:
-            user_context.career_goals = request.career_goals
-        
-        # Convert to schema
-        user_schema = _convert_user_context_to_schema(user_context)
-        
-        return UserProfileResponse(
-            user=user_schema,
-            message="User created successfully"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating user: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create user"
-        )
+# User creation is now handled by /api/v1/auth/register endpoint
 
 
 @router.get("/{user_id}", response_model=UserProfileResponse)

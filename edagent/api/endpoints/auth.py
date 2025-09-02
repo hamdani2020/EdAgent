@@ -11,6 +11,10 @@ from datetime import datetime
 from ...services.auth_service import AuthenticationService
 from ...models.auth import AuthenticationRequest, TokenValidationResult
 from ...config import get_settings
+from ...database.connection import db_manager
+from ...database.utils import DatabaseUtils
+from ...utils.password import PasswordManager
+from ..schemas import CreateUserRequest, LoginRequest, LoginResponse
 
 
 logger = logging.getLogger(__name__)
@@ -298,6 +302,164 @@ async def revoke_api_key(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to revoke API key"
+        )
+
+
+@router.post("/register", response_model=LoginResponse)
+async def register_user(
+    request: CreateUserRequest,
+    http_request: Request,
+    auth_service: AuthenticationService = Depends(get_auth_service)
+):
+    """
+    Register a new user with email and password
+    
+    Creates a new user account and returns an authentication token.
+    """
+    try:
+        db_utils = DatabaseUtils()
+        
+        # Check password strength
+        is_strong, error_msg = PasswordManager.is_strong_password(request.password)
+        if not is_strong:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+        
+        async with db_manager.get_session() as session:
+            # Check if user already exists
+            existing_user = await db_utils.get_user_by_email(session, request.email)
+            if existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="User with this email already exists"
+                )
+            
+            # Hash password
+            password_hash = PasswordManager.hash_password(request.password)
+            
+            # Prepare preferences
+            preferences_dict = None
+            if request.learning_preferences:
+                preferences_dict = request.learning_preferences.dict()
+            
+            # Create user
+            user = await db_utils.create_user(
+                session=session,
+                email=request.email,
+                password_hash=password_hash,
+                name=request.name,
+                preferences=preferences_dict
+            )
+            
+            # Add career goals to preferences if provided
+            if request.career_goals:
+                user.preferences = user.preferences or {}
+                user.preferences['career_goals'] = request.career_goals
+            
+            await session.commit()
+            
+            # Create session for the new user
+            client_ip = http_request.client.host if http_request.client else None
+            user_agent = http_request.headers.get("user-agent")
+            
+            auth_request = AuthenticationRequest(
+                user_id=str(user.id),
+                ip_address=client_ip,
+                user_agent=user_agent,
+                session_duration_minutes=1440  # 24 hours
+            )
+            
+            session_response = await auth_service.create_session(auth_request)
+            
+            return LoginResponse(
+                access_token=session_response.session_token,
+                user_id=str(user.id),
+                email=user.email,
+                name=user.name,
+                expires_at=session_response.expires_at
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"User registration error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to register user"
+        )
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login_user(
+    request: LoginRequest,
+    http_request: Request,
+    auth_service: AuthenticationService = Depends(get_auth_service)
+):
+    """
+    Login user with email and password
+    
+    Authenticates user credentials and returns an authentication token.
+    """
+    try:
+        db_utils = DatabaseUtils()
+        
+        async with db_manager.get_session() as session:
+            # Get user by email
+            user = await db_utils.get_user_by_email(session, request.email)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+            
+            # Verify password
+            if not PasswordManager.verify_password(request.password, user.password_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+            
+            # Check if user is active
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Account is deactivated"
+                )
+            
+            # Create session
+            client_ip = http_request.client.host if http_request.client else None
+            user_agent = http_request.headers.get("user-agent")
+            
+            auth_request = AuthenticationRequest(
+                user_id=str(user.id),
+                ip_address=client_ip,
+                user_agent=user_agent,
+                session_duration_minutes=1440  # 24 hours
+            )
+            
+            session_response = await auth_service.create_session(auth_request)
+            
+            # Update last active timestamp
+            user.last_active = datetime.utcnow()
+            await session.commit()
+            
+            return LoginResponse(
+                access_token=session_response.session_token,
+                user_id=str(user.id),
+                email=user.email,
+                name=user.name,
+                expires_at=session_response.expires_at
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"User login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to login user"
         )
 
 
