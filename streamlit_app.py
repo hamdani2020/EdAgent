@@ -414,7 +414,7 @@ def main_dashboard():
         render_resume_analyzer()
 
 def show_chat_interface():
-    """Chat interface with WebSocket support"""
+    """Enhanced chat interface with full API integration and WebSocket support"""
     st.header("💬 Chat with EdAgent")
     
     # Check authentication
@@ -424,91 +424,357 @@ def show_chat_interface():
     
     user_info = session_manager.get_current_user()
     
-    # Initialize WebSocket if enabled and user is authenticated
-    if is_feature_enabled("websocket_chat") and user_info:
-        if "ws_connected" not in st.session_state:
-            st.session_state.ws_connected = False
+    # Initialize conversation state
+    if "conversation_loaded" not in st.session_state:
+        st.session_state.conversation_loaded = False
+    
+    if "conversation_page" not in st.session_state:
+        st.session_state.conversation_page = 0
+    
+    if "ws_connection_status" not in st.session_state:
+        st.session_state.ws_connection_status = "disconnected"
+    
+    # Load conversation history from API if not already loaded
+    if not st.session_state.conversation_loaded:
+        with st.spinner("Loading conversation history..."):
+            try:
+                history = asyncio.run(api.get_conversation_history(user_info.user_id, limit=50))
+                if history:
+                    # Convert API history to chat messages format
+                    st.session_state.chat_messages = []
+                    for msg in history:
+                        st.session_state.chat_messages.append({
+                            "role": msg.get("role", "assistant"),
+                            "content": msg.get("content", ""),
+                            "timestamp": datetime.fromisoformat(msg.get("timestamp")) if msg.get("timestamp") else datetime.now(),
+                            "metadata": msg.get("metadata", {})
+                        })
+                    st.success(f"✅ Loaded {len(history)} previous messages")
+                else:
+                    # Initialize with welcome message if no history
+                    st.session_state.chat_messages = [{
+                        "role": "assistant",
+                        "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                        "timestamp": datetime.now(),
+                        "metadata": {}
+                    }]
+                st.session_state.conversation_loaded = True
+            except Exception as e:
+                st.error(f"Failed to load conversation history: {str(e)}")
+                # Fallback to empty conversation
+                st.session_state.chat_messages = [{
+                    "role": "assistant",
+                    "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                    "timestamp": datetime.now(),
+                    "metadata": {}
+                }]
+                st.session_state.conversation_loaded = True
+    
+    # WebSocket connection management
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        # Connection status indicator
+        status_colors = {
+            "connected": "🟢",
+            "connecting": "🟡", 
+            "disconnected": "🔴",
+            "error": "🔴"
+        }
+        status_text = {
+            "connected": "Real-time chat active",
+            "connecting": "Connecting...",
+            "disconnected": "Using standard chat",
+            "error": "Connection failed"
+        }
         
-        if not st.session_state.ws_connected:
-            if connect_websocket(user_info.user_id, session_manager.get_auth_token()):
-                st.session_state.ws_connected = True
-                st.success("🔗 Connected to real-time chat!")
+        st.caption(f"{status_colors.get(st.session_state.ws_connection_status, '🔴')} {status_text.get(st.session_state.ws_connection_status, 'Unknown')}")
     
-    # Initialize empty chat if no messages exist
-    if not st.session_state.chat_messages:
-        st.session_state.chat_messages = [{
-            "role": "assistant",
-            "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
-            "timestamp": datetime.now()
-        }]
+    with col2:
+        if st.button("🔗 Connect WebSocket", key="connect_ws"):
+            st.session_state.ws_connection_status = "connecting"
+            try:
+                if connect_websocket(user_info.user_id, session_manager.get_auth_token()):
+                    st.session_state.ws_connection_status = "connected"
+                    st.success("🔗 Connected to real-time chat!")
+                else:
+                    st.session_state.ws_connection_status = "error"
+                    st.error("Failed to connect WebSocket")
+            except Exception as e:
+                st.session_state.ws_connection_status = "error"
+                st.error(f"WebSocket connection error: {str(e)}")
+            st.rerun()
     
-    # Chat container with custom styling
-    with st.container():
+    with col3:
+        if st.button("🗑️ Clear History", key="clear_history"):
+            if st.session_state.get("confirm_clear", False):
+                try:
+                    success = asyncio.run(api.clear_conversation_history(user_info.user_id))
+                    if success:
+                        st.session_state.chat_messages = [{
+                            "role": "assistant",
+                            "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                            "timestamp": datetime.now(),
+                            "metadata": {}
+                        }]
+                        st.success("✅ Conversation history cleared")
+                    else:
+                        st.error("Failed to clear conversation history")
+                except Exception as e:
+                    st.error(f"Error clearing history: {str(e)}")
+                st.session_state.confirm_clear = False
+                st.rerun()
+            else:
+                st.session_state.confirm_clear = True
+                st.warning("⚠️ Click again to confirm clearing all conversation history")
+                st.rerun()
+    
+    # Chat container with enhanced styling and pagination
+    chat_container = st.container()
+    
+    with chat_container:
+        # Pagination controls for large conversation histories
+        total_messages = len(st.session_state.chat_messages)
+        messages_per_page = 20
+        total_pages = max(1, (total_messages + messages_per_page - 1) // messages_per_page)
+        
+        if total_pages > 1:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col1:
+                if st.button("⬅️ Previous", disabled=st.session_state.conversation_page == 0):
+                    st.session_state.conversation_page = max(0, st.session_state.conversation_page - 1)
+                    st.rerun()
+            
+            with col2:
+                st.write(f"Page {st.session_state.conversation_page + 1} of {total_pages}")
+            
+            with col3:
+                if st.button("Next ➡️", disabled=st.session_state.conversation_page >= total_pages - 1):
+                    st.session_state.conversation_page = min(total_pages - 1, st.session_state.conversation_page + 1)
+                    st.rerun()
+        
+        # Calculate message range for current page
+        start_idx = st.session_state.conversation_page * messages_per_page
+        end_idx = min(start_idx + messages_per_page, total_messages)
+        
+        # Display chat messages with enhanced formatting
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
         
-        # Display chat messages
-        for i, msg in enumerate(st.session_state.chat_messages):
+        for i in range(start_idx, end_idx):
+            msg = st.session_state.chat_messages[i]
+            
+            # Enhanced message display with metadata
             if msg["role"] == "user":
-                message(msg["content"], is_user=True, key=f"user_{i}")
+                with st.chat_message("user"):
+                    st.write(msg["content"])
+                    st.caption(f"🕒 {msg['timestamp'].strftime('%H:%M:%S')}")
             else:
-                message(msg["content"], is_user=False, key=f"bot_{i}")
+                with st.chat_message("assistant"):
+                    st.write(msg["content"])
+                    
+                    # Display content recommendations if available
+                    metadata = msg.get("metadata", {})
+                    if metadata.get("content_recommendations"):
+                        with st.expander("📚 Recommended Resources"):
+                            for rec in metadata["content_recommendations"][:3]:  # Show top 3
+                                st.write(f"• **{rec.get('title', 'Resource')}** - {rec.get('description', 'No description')}")
+                                if rec.get('url'):
+                                    st.markdown(f"  [View Resource]({rec['url']})")
+                    
+                    # Display follow-up questions if available
+                    if metadata.get("follow_up_questions"):
+                        st.write("**Suggested follow-up questions:**")
+                        for j, question in enumerate(metadata["follow_up_questions"][:3]):
+                            if st.button(f"💭 {question}", key=f"followup_{i}_{j}"):
+                                # Add follow-up question as user message
+                                st.session_state.chat_messages.append({
+                                    "role": "user",
+                                    "content": question,
+                                    "timestamp": datetime.now(),
+                                    "metadata": {"type": "follow_up"}
+                                })
+                                st.rerun()
+                    
+                    # Display suggested actions if available
+                    if metadata.get("suggested_actions"):
+                        st.write("**Suggested actions:**")
+                        for action in metadata["suggested_actions"][:2]:
+                            st.write(f"• {action}")
+                    
+                    st.caption(f"🕒 {msg['timestamp'].strftime('%H:%M:%S')}")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Chat input
+    # Enhanced chat input with loading states
     user_input = st.chat_input("Type your message here...")
     
     if user_input:
-        # Add user message
-        st.session_state.chat_messages.append({
+        # Add user message immediately
+        user_message = {
             "role": "user",
             "content": user_input,
-            "timestamp": datetime.now()
-        })
+            "timestamp": datetime.now(),
+            "metadata": {}
+        }
+        st.session_state.chat_messages.append(user_message)
         
-        # Get AI response
+        # Show loading state
         with st.spinner("EdAgent is thinking..."):
-            if session_manager.is_authenticated():
-                # Try to get real AI response from API
-                user_info = session_manager.get_current_user()
-                chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
-                response_content = chat_response.message or "I'm sorry, I couldn't process your message right now."
-            else:
-                # For non-authenticated users, provide a helpful response
-                response_content = "I'd be happy to help! However, to provide personalized assistance, please login or register first. I can help you with career planning, skill assessments, learning paths, and more once you're authenticated."
-            
-            # Add AI response
-            st.session_state.chat_messages.append({
-                "role": "assistant", 
-                "content": response_content,
-                "timestamp": datetime.now()
-            })
+            try:
+                # Try WebSocket first if connected
+                if st.session_state.ws_connection_status == "connected":
+                    try:
+                        success = send_websocket_message(user_input)
+                        if success:
+                            # Wait for WebSocket response (simplified)
+                            response = get_websocket_response()
+                            if response:
+                                response_content = response.get("content", "I received your message via WebSocket!")
+                                response_metadata = response.get("metadata", {})
+                            else:
+                                # Fallback to HTTP API
+                                chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                                response_content = chat_response.message
+                                response_metadata = {
+                                    "content_recommendations": chat_response.content_recommendations,
+                                    "follow_up_questions": chat_response.follow_up_questions,
+                                    "suggested_actions": chat_response.suggested_actions,
+                                    "confidence_score": chat_response.confidence_score
+                                }
+                        else:
+                            raise Exception("WebSocket send failed")
+                    except Exception as ws_error:
+                        st.warning(f"WebSocket failed, using HTTP API: {str(ws_error)}")
+                        st.session_state.ws_connection_status = "error"
+                        # Fallback to HTTP API
+                        chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                        response_content = chat_response.message
+                        response_metadata = {
+                            "content_recommendations": chat_response.content_recommendations,
+                            "follow_up_questions": chat_response.follow_up_questions,
+                            "suggested_actions": chat_response.suggested_actions,
+                            "confidence_score": chat_response.confidence_score
+                        }
+                else:
+                    # Use HTTP API
+                    chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                    response_content = chat_response.message
+                    response_metadata = {
+                        "content_recommendations": chat_response.content_recommendations,
+                        "follow_up_questions": chat_response.follow_up_questions,
+                        "suggested_actions": chat_response.suggested_actions,
+                        "confidence_score": chat_response.confidence_score
+                    }
+                
+                # Add AI response
+                ai_message = {
+                    "role": "assistant",
+                    "content": response_content,
+                    "timestamp": datetime.now(),
+                    "metadata": response_metadata
+                }
+                st.session_state.chat_messages.append(ai_message)
+                
+            except Exception as e:
+                # Error handling with user-friendly message
+                error_message = {
+                    "role": "assistant",
+                    "content": f"I'm sorry, I'm having trouble connecting right now. Please try again later. (Error: {str(e)})",
+                    "timestamp": datetime.now(),
+                    "metadata": {"error": True}
+                }
+                st.session_state.chat_messages.append(error_message)
+                st.error(f"Chat error: {str(e)}")
         
         st.rerun()
     
-    # Quick action buttons
+    # Enhanced quick action buttons with context
     st.subheader("Quick Actions")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("🎯 Start Assessment"):
-            add_chat_message("assistant", "Let's start a skill assessment! What area would you like to assess?")
+        if st.button("🎯 Start Assessment", key="quick_assessment_btn"):
+            add_enhanced_chat_message("assistant", 
+                "Let's start a skill assessment! What area would you like to assess?",
+                metadata={
+                    "suggested_actions": ["Choose from: Python, JavaScript, Data Science, Machine Learning"],
+                    "follow_up_questions": ["What's your current experience level?", "Any specific skills you want to focus on?"]
+                })
             st.rerun()
     
     with col2:
-        if st.button("📚 Create Learning Path"):
-            add_chat_message("assistant", "I'll help you create a learning path! What's your career goal?")
+        if st.button("📚 Create Learning Path", key="quick_learning_btn"):
+            add_enhanced_chat_message("assistant", 
+                "I'll help you create a personalized learning path! What's your career goal?",
+                metadata={
+                    "suggested_actions": ["Be specific about your target role", "Mention your timeline"],
+                    "follow_up_questions": ["What's your current skill level?", "How much time can you dedicate per week?"]
+                })
             st.rerun()
     
     with col3:
-        if st.button("💼 Resume Help"):
-            add_chat_message("assistant", "I can help improve your resume! Please share your current resume or describe your experience.")
+        if st.button("💼 Resume Help", key="quick_resume_btn"):
+            add_enhanced_chat_message("assistant", 
+                "I can help improve your resume! Please share your current resume or describe your experience.",
+                metadata={
+                    "suggested_actions": ["Upload your resume file", "Describe your target role"],
+                    "follow_up_questions": ["What industry are you targeting?", "Any specific concerns about your resume?"]
+                })
             st.rerun()
     
     with col4:
-        if st.button("🎤 Interview Prep"):
-            add_chat_message("assistant", "Let's prepare for your interviews! What type of role are you interviewing for?")
+        if st.button("🎤 Interview Prep", key="quick_interview_btn"):
+            add_enhanced_chat_message("assistant", 
+                "Let's prepare for your interviews! What type of role are you interviewing for?",
+                metadata={
+                    "suggested_actions": ["Specify the role and company", "Mention interview format (technical, behavioral, etc.)"],
+                    "follow_up_questions": ["When is your interview?", "What are you most nervous about?"]
+                })
             st.rerun()
+    
+    # Conversation context management
+    st.divider()
+    with st.expander("🔧 Conversation Settings"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📥 Export Conversation", key="export_conv"):
+                try:
+                    # Create exportable conversation data
+                    export_data = {
+                        "user_id": user_info.user_id,
+                        "export_date": datetime.now().isoformat(),
+                        "messages": st.session_state.chat_messages
+                    }
+                    
+                    # Convert to JSON for download
+                    json_str = json.dumps(export_data, indent=2, default=str)
+                    st.download_button(
+                        label="💾 Download JSON",
+                        data=json_str,
+                        file_name=f"edagent_conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json"
+                    )
+                except Exception as e:
+                    st.error(f"Export failed: {str(e)}")
+        
+        with col2:
+            if st.button("🔄 Refresh History", key="refresh_history"):
+                st.session_state.conversation_loaded = False
+                st.rerun()
+
+
+def add_enhanced_chat_message(role: str, content: str, metadata: Dict[str, Any] = None):
+    """Add an enhanced message to the chat history with metadata"""
+    if metadata is None:
+        metadata = {}
+    
+    st.session_state.chat_messages.append({
+        "role": role,
+        "content": content,
+        "timestamp": datetime.now(),
+        "metadata": metadata
+    })
 
 
 
