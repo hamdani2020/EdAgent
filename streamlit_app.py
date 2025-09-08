@@ -787,67 +787,11 @@ def add_chat_message(role: str, content: str):
     })
 
 def show_assessments():
-    """Skill assessments interface"""
-    st.header("📊 Skill Assessments")
+    """Comprehensive skill assessments interface with full API integration"""
+    from streamlit_assessment_components import render_assessment_dashboard
     
-    # Check authentication
-    if not session_manager.is_authenticated():
-        st.warning("🔐 Please log in to access skill assessments.")
-        return
-    
-    user_info = session_manager.get_current_user()
-    
-    # Use the enhanced assessment widget
-    render_skill_assessment_widget(api, user_info.user_id)
-    
-    st.divider()
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Quick Assessment")
-        
-        skill_area = st.selectbox(
-            "Choose skill area:",
-            ["Python Programming", "Web Development", "Data Science", 
-             "Machine Learning", "Digital Marketing", "Project Management"]
-        )
-        
-        if st.button("Start Quick Assessment", key="quick_assessment"):
-            if session_manager.is_authenticated():
-                user_info = session_manager.get_current_user()
-                result = asyncio.run(api.start_assessment(user_info.user_id, skill_area.lower()))
-                if result:
-                    st.session_state.current_assessment = result
-                    st.success(f"✅ Started {skill_area} assessment!")
-                else:
-                    st.error("Failed to start assessment")
-            else:
-                st.info("Please login to start an assessment")
-    
-    with col2:
-        st.subheader("Assessment History")
-        
-        # Show assessment history from API
-        if session_manager.is_authenticated():
-            user_info = session_manager.get_current_user()
-            assessments = asyncio.run(api.get_user_assessments(user_info.user_id))
-            if assessments:
-                st.write("Your recent assessments:")
-                for assessment in assessments[:5]:  # Show last 5
-                    st.write(f"• {assessment.get('skill_area', 'Unknown')} - {assessment.get('status', 'Unknown')}")
-            else:
-                st.info("No assessment history found. Take your first assessment!")
-        else:
-            st.info("Please login to view your assessment history.")
-            
-        # Show placeholder assessment data for demonstration
-        assessment_data = {
-            "Assessment": ["Python Programming", "Web Development", "Data Science"],
-            "Date": ["2024-01-15", "2024-01-10", "2024-01-05"],
-            "Score": [85, 72, 90],
-            "Level": ["Intermediate", "Beginner", "Advanced"]
-        }
+    # Render the complete assessment dashboard
+    render_assessment_dashboard(api, session_manager)
         
         df = pd.DataFrame(assessment_data)
         st.dataframe(df, use_container_width=True)
