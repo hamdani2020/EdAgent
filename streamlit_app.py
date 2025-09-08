@@ -25,6 +25,9 @@ from streamlit_components import (
     render_progress_dashboard, render_resource_recommendations,
     render_interview_prep_widget, render_resume_analyzer, render_career_roadmap
 )
+from streamlit_api_client import EnhancedEdAgentAPI
+from streamlit_session_manager import SessionManager
+from streamlit_auth_components import AuthenticationComponents
 
 # Configuration
 API_BASE_URL = StreamlitConfig.API_BASE_URL
@@ -242,152 +245,31 @@ class EdAgentAPI:
             st.error(f"Failed to send chat message: {str(e)}")
             return {"message": "I'm sorry, I'm having trouble connecting to the AI service right now. Please try again later."}
 
-# Initialize API client
-api = EdAgentAPI(API_BASE_URL)
+# Initialize enhanced components
+session_manager = SessionManager()
+api = EnhancedEdAgentAPI(API_BASE_URL, session_manager)
+auth_components = AuthenticationComponents(api, session_manager)
 
 def initialize_session_state():
     """Initialize session state variables"""
-    if "user_id" not in st.session_state:
-        st.session_state.user_id = None
-    if "access_token" not in st.session_state:
-        st.session_state.access_token = None
-    if "user_email" not in st.session_state:
-        st.session_state.user_email = None
-    if "user_name" not in st.session_state:
-        st.session_state.user_name = None
-    if "user_profile" not in st.session_state:
-        st.session_state.user_profile = None
+    # Load session state from session manager
+    session_manager.load_session_state()
+    
+    # Initialize chat messages if not exists
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
     if "current_assessment" not in st.session_state:
         st.session_state.current_assessment = None
     if "learning_paths" not in st.session_state:
         st.session_state.learning_paths = []
-    if "show_registration" not in st.session_state:
-        st.session_state.show_registration = False
 
 def authenticate_user():
-    """Handle user authentication with email/password"""
-    st.sidebar.header("🔐 Authentication")
-    
-    if st.session_state.user_id is None:
-        # Login/Register tabs
-        auth_tab = st.sidebar.radio("Choose action:", ["Login", "Register"])
-        
-        if auth_tab == "Login":
-            with st.sidebar.form("login_form"):
-                st.subheader("Login")
-                email = st.text_input("Email:", placeholder="your.email@example.com")
-                password = st.text_input("Password:", type="password")
-                
-                login_submitted = st.form_submit_button("Login")
-                
-                if login_submitted:
-                    if email and password:
-                        login_result = api.login_user(email, password)
-                        if login_result:
-                            # Store authentication data
-                            st.session_state.access_token = login_result.get("access_token")
-                            st.session_state.user_id = login_result.get("user_id")
-                            st.session_state.user_email = login_result.get("email")
-                            
-                            # Try to get user profile
-                            user_data = api.get_user(st.session_state.user_id)
-                            if user_data:
-                                st.session_state.user_profile = user_data.get("user")
-                            
-                            st.sidebar.success("✅ Logged in successfully!")
-                            st.rerun()
-                    else:
-                        st.sidebar.error("Please enter both email and password")
-        
-        else:  # Register
-            with st.sidebar.form("register_form"):
-                st.subheader("Register")
-                name = st.text_input("Full Name:", placeholder="John Doe")
-                email = st.text_input("Email:", placeholder="your.email@example.com")
-                password = st.text_input("Password:", type="password", 
-                                       help="Must contain uppercase, lowercase, number, and special character")
-                
-                # Password strength indicator
-                if password:
-                    strength_score = 0
-                    requirements = []
-                    
-                    if len(password) >= 8:
-                        strength_score += 1
-                    else:
-                        requirements.append("At least 8 characters")
-                    
-                    if any(c.isupper() for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One uppercase letter")
-                    
-                    if any(c.islower() for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One lowercase letter")
-                    
-                    if any(c.isdigit() for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One number")
-                    
-                    if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One special character")
-                    
-                    # Show strength
-                    if strength_score < 3:
-                        st.error(f"Weak password. Missing: {', '.join(requirements)}")
-                    elif strength_score < 5:
-                        st.warning(f"Medium password. Missing: {', '.join(requirements)}")
-                    else:
-                        st.success("Strong password! ✓")
-                confirm_password = st.text_input("Confirm Password:", type="password")
-                
-                register_submitted = st.form_submit_button("Register")
-                
-                if register_submitted:
-                    if name and email and password and confirm_password:
-                        if password != confirm_password:
-                            st.sidebar.error("Passwords do not match")
-                        else:
-                            register_result = api.register_user(email, password, name)
-                            if register_result:
-                                # Store authentication data
-                                st.session_state.access_token = register_result.get("access_token")
-                                st.session_state.user_id = register_result.get("user_id")
-                                st.session_state.user_email = register_result.get("email")
-                                st.session_state.user_name = name
-                                
-                                st.sidebar.success("✅ Registered and logged in successfully!")
-                                st.rerun()
-                    else:
-                        st.sidebar.error("Please fill in all fields")
-    
-    else:
-        # Show logged in user info
-        user_display = st.session_state.user_email or st.session_state.user_name or st.session_state.user_id
-        st.sidebar.success(f"👤 Logged in as: {user_display}")
-        
-        # User menu
-        with st.sidebar.expander("Account", expanded=False):
-            st.write(f"**Email:** {st.session_state.user_email}")
-            st.write(f"**Name:** {st.session_state.user_name}")
-            st.write(f"**User ID:** {st.session_state.user_id}")
-        
-        if st.sidebar.button("Logout", key="logout_btn"):
-            # Clear session state
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+    """Handle user authentication with enhanced components"""
+    return auth_components.render_authentication_interface()
 
 def show_profile_setup():
     """Show profile setup form for new users"""
-    if st.session_state.get("show_profile_setup", False):
+    if session_manager.get_ui_state("show_profile_setup", False):
         st.header("📝 Complete Your Profile")
         st.write("Welcome! Let's set up your learning profile to provide personalized recommendations.")
         
@@ -443,28 +325,28 @@ def show_profile_setup():
             if submitted or skip:
                 if submitted and career_goals:
                     # Update user profile with preferences
-                    preferences = {
-                        "career_goals": career_goals,
-                        "learning_preferences": {
-                            "learning_style": learning_style,
-                            "time_commitment": time_commitment,
-                            "budget_preference": budget_preference,
-                            "preferred_platforms": preferred_platforms,
-                            "content_types": content_types,
-                            "difficulty_preference": difficulty_preference
-                        }
-                    }
+                    from streamlit_session_manager import UserPreferences
+                    preferences = UserPreferences(
+                        career_goals=career_goals,
+                        learning_style=learning_style,
+                        time_commitment=time_commitment,
+                        budget_preference=budget_preference,
+                        preferred_platforms=preferred_platforms,
+                        content_types=content_types,
+                        difficulty_preference=difficulty_preference
+                    )
                     
-                    # Store preferences in session state
-                    st.session_state.user_preferences = preferences
+                    # Store preferences in session manager
+                    session_manager.update_user_preferences(preferences)
                     st.success("✅ Profile saved successfully!")
                 
-                st.session_state.show_profile_setup = False
+                session_manager.set_ui_state("show_profile_setup", False)
                 st.rerun()
 
 def main_dashboard():
     """Main dashboard view"""
-    if st.session_state.user_id is None:
+    # Check authentication status
+    if not session_manager.is_authenticated():
         st.markdown('<h1 class="main-header">🎓 Welcome to EdAgent</h1>', unsafe_allow_html=True)
         st.markdown("""
         ### Your AI-Powered Career Coach
@@ -486,15 +368,17 @@ def main_dashboard():
         """)
         return
     
-    # Welcome message for authenticated users
-    welcome_name = st.session_state.user_name or st.session_state.user_email.split('@')[0] if st.session_state.user_email else "there"
+    # Get current user info
+    user_info = session_manager.get_current_user()
+    welcome_name = user_info.name or user_info.email.split('@')[0] if user_info else "there"
     st.markdown(f'<h1 class="main-header">🎓 Welcome back, {welcome_name}!</h1>', unsafe_allow_html=True)
     
     # Show profile setup prompt for new users
-    if not st.session_state.get("user_preferences"):
+    user_preferences = session_manager.get_user_preferences()
+    if not user_preferences:
         st.info("💡 **Tip:** Complete your profile setup to get personalized recommendations!")
         if st.button("Set Up Profile", key="setup_profile_btn"):
-            st.session_state.show_profile_setup = True
+            session_manager.set_ui_state("show_profile_setup", True)
             st.rerun()
     
     st.markdown('<h1 class="main-header">🎓 EdAgent Dashboard</h1>', unsafe_allow_html=True)
@@ -533,13 +417,20 @@ def show_chat_interface():
     """Chat interface with WebSocket support"""
     st.header("💬 Chat with EdAgent")
     
+    # Check authentication
+    if not session_manager.is_authenticated():
+        st.warning("🔐 Please log in to use the chat feature.")
+        return
+    
+    user_info = session_manager.get_current_user()
+    
     # Initialize WebSocket if enabled and user is authenticated
-    if is_feature_enabled("websocket_chat") and st.session_state.user_id and st.session_state.access_token:
+    if is_feature_enabled("websocket_chat") and user_info:
         if "ws_connected" not in st.session_state:
             st.session_state.ws_connected = False
         
         if not st.session_state.ws_connected:
-            if connect_websocket(st.session_state.user_id, st.session_state.access_token):
+            if connect_websocket(user_info.user_id, session_manager.get_auth_token()):
                 st.session_state.ws_connected = True
                 st.success("🔗 Connected to real-time chat!")
     
@@ -577,10 +468,11 @@ def show_chat_interface():
         
         # Get AI response
         with st.spinner("EdAgent is thinking..."):
-            if st.session_state.user_id:
+            if session_manager.is_authenticated():
                 # Try to get real AI response from API
-                chat_response = api.send_chat_message(st.session_state.user_id, user_input)
-                response_content = chat_response.get("message", "I'm sorry, I couldn't process your message right now.")
+                user_info = session_manager.get_current_user()
+                chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                response_content = chat_response.message or "I'm sorry, I couldn't process your message right now."
             else:
                 # For non-authenticated users, provide a helpful response
                 response_content = "I'd be happy to help! However, to provide personalized assistance, please login or register first. I can help you with career planning, skill assessments, learning paths, and more once you're authenticated."
@@ -632,8 +524,15 @@ def show_assessments():
     """Skill assessments interface"""
     st.header("📊 Skill Assessments")
     
+    # Check authentication
+    if not session_manager.is_authenticated():
+        st.warning("🔐 Please log in to access skill assessments.")
+        return
+    
+    user_info = session_manager.get_current_user()
+    
     # Use the enhanced assessment widget
-    render_skill_assessment_widget(api, st.session_state.user_id or "demo_user")
+    render_skill_assessment_widget(api, user_info.user_id)
     
     st.divider()
     
@@ -649,8 +548,9 @@ def show_assessments():
         )
         
         if st.button("Start Quick Assessment", key="quick_assessment"):
-            if st.session_state.user_id:
-                result = api.start_assessment(st.session_state.user_id, skill_area.lower())
+            if session_manager.is_authenticated():
+                user_info = session_manager.get_current_user()
+                result = asyncio.run(api.start_assessment(user_info.user_id, skill_area.lower()))
                 if result:
                     st.session_state.current_assessment = result
                     st.success(f"✅ Started {skill_area} assessment!")
@@ -663,9 +563,15 @@ def show_assessments():
         st.subheader("Assessment History")
         
         # Show assessment history from API
-        if st.session_state.user_id:
-            # TODO: Implement API call to get user assessments
-            st.info("Assessment history will be loaded from your profile.")
+        if session_manager.is_authenticated():
+            user_info = session_manager.get_current_user()
+            assessments = asyncio.run(api.get_user_assessments(user_info.user_id))
+            if assessments:
+                st.write("Your recent assessments:")
+                for assessment in assessments[:5]:  # Show last 5
+                    st.write(f"• {assessment.get('skill_area', 'Unknown')} - {assessment.get('status', 'Unknown')}")
+            else:
+                st.info("No assessment history found. Take your first assessment!")
         else:
             st.info("Please login to view your assessment history.")
             
