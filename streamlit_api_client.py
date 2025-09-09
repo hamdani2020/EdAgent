@@ -211,6 +211,37 @@ class SessionManager:
         return st.session_state.get(f"{self.session_key_prefix}token_expires_at")
 
 
+def safe_parse_datetime(datetime_str: Optional[str]) -> Optional[datetime]:
+    """
+    Safely parse datetime strings, handling various formats including ISO with 'Z' suffix.
+    
+    Args:
+        datetime_str: The datetime string to parse
+        
+    Returns:
+        Parsed datetime object or None if parsing fails
+    """
+    if not datetime_str:
+        return None
+    
+    try:
+        # Handle 'Z' suffix by replacing it with '+00:00'
+        if datetime_str.endswith('Z'):
+            datetime_str = datetime_str[:-1] + '+00:00'
+        
+        # Try parsing with timezone info first
+        try:
+            return datetime.fromisoformat(datetime_str)
+        except ValueError:
+            # Fallback: try without timezone info
+            if '+' in datetime_str or datetime_str.endswith('Z'):
+                datetime_str = datetime_str.split('+')[0].split('Z')[0]
+            return datetime.fromisoformat(datetime_str)
+    except (ValueError, AttributeError) as e:
+        logging.warning(f"Failed to parse datetime string '{datetime_str}': {e}")
+        return None
+
+
 class EnhancedEdAgentAPI:
     """
     Enhanced API client with comprehensive error handling, retry logic, and response processing
@@ -523,7 +554,7 @@ class EnhancedEdAgentAPI:
                     user_id=data.get("user_id"),
                     email=data.get("email"),
                     name=data.get("name"),
-                    expires_at=datetime.fromisoformat(data.get("expires_at")) if data.get("expires_at") else None
+                    expires_at=safe_parse_datetime(data.get("expires_at"))
                 )
             else:
                 self._handle_api_error(response.error, "user registration")
@@ -553,7 +584,7 @@ class EnhancedEdAgentAPI:
                     user_id=data.get("user_id"),
                     email=data.get("email"),
                     name=data.get("name"),
-                    expires_at=datetime.fromisoformat(data.get("expires_at")) if data.get("expires_at") else None
+                    expires_at=safe_parse_datetime(data.get("expires_at"))
                 )
             else:
                 self._handle_api_error(response.error, "user login")
@@ -576,7 +607,7 @@ class EnhancedEdAgentAPI:
                     user_id=self.session_manager.get_current_user_id(),
                     email=self.session_manager.get_user_email(),
                     name=self.session_manager.get_user_name(),
-                    expires_at=datetime.fromisoformat(data.get("expires_at")) if data.get("expires_at") else None
+                    expires_at=safe_parse_datetime(data.get("expires_at"))
                 )
                 self.session_manager.set_auth_data(auth_result)
                 return True
@@ -684,7 +715,7 @@ class EnhancedEdAgentAPI:
                     questions=data.get("questions", []),
                     current_question_index=data.get("current_question_index", 0),
                     status=data.get("status", "active"),
-                    started_at=datetime.fromisoformat(data.get("started_at")) if data.get("started_at") else None,
+                    started_at=safe_parse_datetime(data.get("started_at")),
                     progress=data.get("progress", 0.0)
                 )
             else:
@@ -716,7 +747,7 @@ class EnhancedEdAgentAPI:
                     questions=data.get("questions", []),
                     current_question_index=data.get("current_question_index", 0),
                     status=data.get("status", "active"),
-                    started_at=datetime.fromisoformat(data.get("started_at")) if data.get("started_at") else None,
+                    started_at=safe_parse_datetime(data.get("started_at")),
                     progress=data.get("progress", 0.0)
                 )
             else:
@@ -789,8 +820,8 @@ class EnhancedEdAgentAPI:
                     difficulty_level=data.get("difficulty_level", "intermediate"),
                     prerequisites=data.get("prerequisites", []),
                     target_skills=data.get("target_skills", []),
-                    created_at=datetime.fromisoformat(data.get("created_at")) if data.get("created_at") else None,
-                    updated_at=datetime.fromisoformat(data.get("updated_at")) if data.get("updated_at") else None,
+                    created_at=safe_parse_datetime(data.get("created_at")),
+                    updated_at=safe_parse_datetime(data.get("updated_at")),
                     progress=data.get("progress", 0.0)
                 )
             else:
@@ -823,8 +854,8 @@ class EnhancedEdAgentAPI:
                         difficulty_level=path_data.get("difficulty_level", "intermediate"),
                         prerequisites=path_data.get("prerequisites", []),
                         target_skills=path_data.get("target_skills", []),
-                        created_at=datetime.fromisoformat(path_data.get("created_at")) if path_data.get("created_at") else None,
-                        updated_at=datetime.fromisoformat(path_data.get("updated_at")) if path_data.get("updated_at") else None,
+                        created_at=safe_parse_datetime(path_data.get("created_at")),
+                        updated_at=safe_parse_datetime(path_data.get("updated_at")),
                         progress=path_data.get("progress", 0.0)
                     ))
                 return paths
@@ -875,6 +906,76 @@ class EnhancedEdAgentAPI:
         except Exception as e:
             logger.error(f"Get learning path progress error: {e}")
             return None
+    
+    async def delete_learning_path(self, path_id: str) -> bool:
+        """Delete a learning path"""
+        try:
+            response = await self._make_request(
+                "DELETE",
+                f"/learning/paths/{path_id}"
+            )
+            
+            if response.success:
+                return True
+            else:
+                self._handle_api_error(response.error, "delete learning path")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Delete learning path error: {e}")
+            return False
+    
+    async def update_learning_path(self, path_id: str, updates: Dict[str, Any]) -> Optional[LearningPath]:
+        """Update a learning path"""
+        try:
+            response = await self._make_request(
+                "PUT",
+                f"/learning/paths/{path_id}",
+                json_data=updates
+            )
+            
+            if response.success:
+                data = response.data
+                return LearningPath(
+                    id=data.get("id"),
+                    title=data.get("title", ""),
+                    description=data.get("description", ""),
+                    goal=data.get("goal", ""),
+                    milestones=data.get("milestones", []),
+                    estimated_duration=data.get("estimated_duration"),
+                    difficulty_level=data.get("difficulty_level", "intermediate"),
+                    prerequisites=data.get("prerequisites", []),
+                    target_skills=data.get("target_skills", []),
+                    created_at=safe_parse_datetime(data.get("created_at")),
+                    updated_at=safe_parse_datetime(data.get("updated_at")),
+                    progress=data.get("progress", 0.0)
+                )
+            else:
+                self._handle_api_error(response.error, "update learning path")
+                return None
+        
+        except Exception as e:
+            logger.error(f"Update learning path error: {e}")
+            return None
+    
+    async def get_learning_path_recommendations(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get learning path recommendations for user"""
+        try:
+            response = await self._make_request(
+                "GET",
+                f"/learning/recommendations/{user_id}"
+            )
+            
+            if response.success:
+                data = response.data
+                return data.get("recommendations", [])
+            else:
+                self._handle_api_error(response.error, "get learning path recommendations")
+                return []
+        
+        except Exception as e:
+            logger.error(f"Get learning path recommendations error: {e}")
+            return []
     
     # User Management methods
     async def get_user_profile(self, user_id: str) -> Optional[Dict[str, Any]]:

@@ -8,7 +8,7 @@
 .venv/
 venv/
 env/
-
+config/
 # IDE and editor files
 .vscode/
 .idea/

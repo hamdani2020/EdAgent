@@ -22,6 +22,42 @@ import base64
 import streamlit as st
 
 
+def safe_parse_datetime(datetime_str: Optional[str]) -> Optional[datetime]:
+    """
+    Safely parse datetime strings, handling various formats including ISO with 'Z' suffix.
+    Returns timezone-naive datetime for consistency.
+    
+    Args:
+        datetime_str: The datetime string to parse
+        
+    Returns:
+        Parsed datetime object (timezone-naive) or None if parsing fails
+    """
+    if not datetime_str:
+        return None
+    
+    try:
+        # Handle 'Z' suffix by replacing it with '+00:00'
+        if datetime_str.endswith('Z'):
+            datetime_str = datetime_str[:-1] + '+00:00'
+        
+        # Try parsing with timezone info first
+        try:
+            dt = datetime.fromisoformat(datetime_str)
+            # Convert to naive datetime (assume UTC if timezone-aware)
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+            return dt
+        except ValueError:
+            # Fallback: try without timezone info
+            if '+' in datetime_str or datetime_str.endswith('Z'):
+                datetime_str = datetime_str.split('+')[0].split('Z')[0]
+            return datetime.fromisoformat(datetime_str)
+    except (ValueError, AttributeError) as e:
+        logging.warning(f"Failed to parse datetime string '{datetime_str}': {e}")
+        return None
+
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,9 +97,9 @@ class UserInfo:
         """Create UserInfo from dictionary"""
         # Convert ISO strings back to datetime objects
         if data.get('created_at') and isinstance(data['created_at'], str):
-            data['created_at'] = datetime.fromisoformat(data['created_at'])
+            data['created_at'] = safe_parse_datetime(data['created_at'])
         if data.get('last_active') and isinstance(data['last_active'], str):
-            data['last_active'] = datetime.fromisoformat(data['last_active'])
+            data['last_active'] = safe_parse_datetime(data['last_active'])
         return cls(**data)
 
 
@@ -284,8 +320,17 @@ class SessionManager:
             # Store user info
             if isinstance(user_info, UserInfo):
                 st.session_state[self._get_session_key("user_info")] = user_info.to_dict()
+                # Also store user_id directly for easy access
+                st.session_state.user_id = user_info.user_id
+                st.session_state.user_email = user_info.email
+                st.session_state.user_name = user_info.name
             else:
                 st.session_state[self._get_session_key("user_info")] = user_info
+                # Also store user_id directly for easy access
+                if isinstance(user_info, dict):
+                    st.session_state.user_id = user_info.get('user_id')
+                    st.session_state.user_email = user_info.get('email')
+                    st.session_state.user_name = user_info.get('name')
             
             # Store encrypted tokens
             st.session_state[self._get_session_key("access_token")] = self._encrypt_token(access_token)
@@ -319,6 +364,11 @@ class SessionManager:
             for key in keys_to_remove:
                 del st.session_state[key]
             
+            # Also clear direct user info keys
+            for key in ['user_id', 'user_email', 'user_name']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
             # Reinitialize session state
             self._initialize_session_state()
             
@@ -335,6 +385,10 @@ class SessionManager:
         if not expires_at:
             return True
         
+        # Ensure timezone-naive comparison
+        if hasattr(expires_at, 'tzinfo') and expires_at.tzinfo is not None:
+            expires_at = expires_at.replace(tzinfo=None)
+        
         # Add small buffer to account for network delays
         buffer = timedelta(seconds=30)
         return datetime.now() >= (expires_at - buffer)
@@ -344,6 +398,10 @@ class SessionManager:
         expires_at = st.session_state.get(self._get_session_key("token_expires_at"))
         if not expires_at:
             return True
+        
+        # Ensure timezone-naive comparison
+        if hasattr(expires_at, 'tzinfo') and expires_at.tzinfo is not None:
+            expires_at = expires_at.replace(tzinfo=None)
         
         return datetime.now() >= (expires_at - self.token_refresh_threshold)
     
@@ -355,6 +413,9 @@ class SessionManager:
         """Get time remaining until token expires"""
         expires_at = self.get_token_expiry_time()
         if expires_at:
+            # Ensure timezone-naive comparison
+            if hasattr(expires_at, 'tzinfo') and expires_at.tzinfo is not None:
+                expires_at = expires_at.replace(tzinfo=None)
             return expires_at - datetime.now()
         return None
     
@@ -383,6 +444,10 @@ class SessionManager:
         last_activity = st.session_state.get(self._get_session_key("last_activity"))
         if not last_activity:
             return True
+        
+        # Ensure timezone-naive comparison
+        if hasattr(last_activity, 'tzinfo') and last_activity.tzinfo is not None:
+            last_activity = last_activity.replace(tzinfo=None)
         
         return datetime.now() - last_activity > self.session_timeout
     
@@ -427,7 +492,7 @@ class SessionManager:
             expired_keys = []
             for key, data in cached_data.items():
                 if isinstance(data, dict) and 'timestamp' in data:
-                    cache_time = datetime.fromisoformat(data['timestamp'])
+                    cache_time = safe_parse_datetime(data['timestamp'])
                     if current_time - cache_time > timedelta(hours=1):
                         expired_keys.append(key)
             
@@ -552,11 +617,16 @@ class SessionManager:
             
             if data and isinstance(data, dict) and 'timestamp' in data:
                 # Check if cache is still valid (1 hour TTL)
-                cache_time = datetime.fromisoformat(data['timestamp'])
-                if datetime.now() - cache_time > timedelta(hours=1):
-                    del cached_data[cache_key]
-                    st.session_state[self._get_session_key("cached_data")] = cached_data
-                    return None
+                cache_time = safe_parse_datetime(data['timestamp'])
+                if cache_time:
+                    # Ensure timezone-naive comparison
+                    if hasattr(cache_time, 'tzinfo') and cache_time.tzinfo is not None:
+                        cache_time = cache_time.replace(tzinfo=None)
+                    
+                    if datetime.now() - cache_time > timedelta(hours=1):
+                        del cached_data[cache_key]
+                        st.session_state[self._get_session_key("cached_data")] = cached_data
+                        return None
                 
                 return data.get('value')
             

@@ -15,11 +15,9 @@ COPY streamlit_requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r streamlit_requirements.txt
 
-# Copy application files
-COPY streamlit_app.py .
-COPY streamlit_config.py .
-COPY streamlit_components.py .
-COPY streamlit_websocket.py .
+# Copy application files.
+
+COPY . .
 
 # Create necessary directories
 RUN mkdir -p /app/logs

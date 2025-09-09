@@ -25,7 +25,7 @@ from streamlit_components import (
     render_progress_dashboard, render_resource_recommendations,
     render_interview_prep_widget, render_resume_analyzer, render_career_roadmap
 )
-from streamlit_api_client import EnhancedEdAgentAPI
+from streamlit_api_client import EnhancedEdAgentAPI, safe_parse_datetime
 from streamlit_session_manager import SessionManager
 from streamlit_auth_components import AuthenticationComponents
 
@@ -262,6 +262,18 @@ def initialize_session_state():
         st.session_state.current_assessment = None
     if "learning_paths" not in st.session_state:
         st.session_state.learning_paths = []
+    
+    # Initialize user profile and other session variables
+    if "user_profile" not in st.session_state:
+        st.session_state.user_profile = None
+    if "conversation_loaded" not in st.session_state:
+        st.session_state.conversation_loaded = False
+    if "conversation_page" not in st.session_state:
+        st.session_state.conversation_page = 0
+    if "ws_connection_status" not in st.session_state:
+        st.session_state.ws_connection_status = "disconnected"
+    if "confirm_clear" not in st.session_state:
+        st.session_state.confirm_clear = False
 
 def authenticate_user():
     """Handle user authentication with enhanced components"""
@@ -424,15 +436,7 @@ def show_chat_interface():
     
     user_info = session_manager.get_current_user()
     
-    # Initialize conversation state
-    if "conversation_loaded" not in st.session_state:
-        st.session_state.conversation_loaded = False
-    
-    if "conversation_page" not in st.session_state:
-        st.session_state.conversation_page = 0
-    
-    if "ws_connection_status" not in st.session_state:
-        st.session_state.ws_connection_status = "disconnected"
+    # Conversation state is now initialized globally
     
     # Load conversation history from API if not already loaded
     if not st.session_state.conversation_loaded:
@@ -446,7 +450,7 @@ def show_chat_interface():
                         st.session_state.chat_messages.append({
                             "role": msg.get("role", "assistant"),
                             "content": msg.get("content", ""),
-                            "timestamp": datetime.fromisoformat(msg.get("timestamp")) if msg.get("timestamp") else datetime.now(),
+                            "timestamp": safe_parse_datetime(msg.get("timestamp")) or datetime.now(),
                             "metadata": msg.get("metadata", {})
                         })
                     st.success(f"✅ Loaded {len(history)} previous messages")
@@ -792,99 +796,14 @@ def show_assessments():
     
     # Render the complete assessment dashboard
     render_assessment_dashboard(api, session_manager)
-        
-        df = pd.DataFrame(assessment_data)
-        st.dataframe(df, use_container_width=True)
-        
-        # Visualization
-        fig = px.bar(df, x="Assessment", y="Score", color="Level",
-                    title="Assessment Scores", color_discrete_map={
-                        "Beginner": "#ff7f0e",
-                        "Intermediate": "#2ca02c", 
-                        "Advanced": "#1f77b4"
-                    })
-        st.plotly_chart(fig, use_container_width=True)
 
 def show_learning_paths():
-    """Learning paths interface"""
-    st.header("🛤️ Learning Paths")
+    """Enhanced learning paths interface with comprehensive management system"""
+    # Import the new learning path management system
+    from streamlit_learning_path_components import render_learning_path_management_system
     
-    # Use the enhanced learning path builder
-    render_learning_path_builder(api, st.session_state.user_id or "demo_user")
-    
-    st.divider()
-    
-    # Career roadmap visualization
-    render_career_roadmap()
-    
-    st.divider()
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Quick Path Creation")
-        
-        goal = st.text_area(
-            "Describe your learning goal:",
-            placeholder="e.g., I want to become a full-stack web developer"
-        )
-        
-        if st.button("Create Learning Path", key="create_path"):
-            if goal:
-                if st.session_state.user_id:
-                    result = api.create_learning_path(st.session_state.user_id, goal)
-                    if result:
-                        st.success("✅ Learning path created!")
-                        # Refresh learning paths
-                        paths_data = api.get_user_learning_paths(st.session_state.user_id)
-                        if paths_data:
-                            st.session_state.learning_paths = paths_data.get("learning_paths", [])
-                    else:
-                        st.error("Failed to create learning path")
-                else:
-                    st.info("Please login to create a learning path")
-            else:
-                st.error("Please describe your learning goal")
-    
-    with col2:
-        st.subheader("Your Learning Paths")
-        
-        # Load learning paths from API
-        if st.session_state.user_id and not st.session_state.learning_paths:
-            paths_data = api.get_user_learning_paths(st.session_state.user_id)
-            if paths_data and "learning_paths" in paths_data:
-                st.session_state.learning_paths = paths_data["learning_paths"]
-        
-        if not st.session_state.learning_paths:
-            st.info("No learning paths yet. Create one to get started!")
-        else:
-            for i, path in enumerate(st.session_state.learning_paths):
-                with st.expander(f"📚 {path.get('title', f'Learning Path {i+1}')}"):
-                    st.write(f"**Goal:** {path.get('goal', 'Not specified')}")
-                    st.write(f"**Progress:** {path.get('progress', 0):.1%}")
-                    
-                    # Progress bar
-                    progress = path.get('progress', 0)
-                    st.progress(progress)
-                    
-                    # Milestones
-                    milestones = path.get('milestones', [])
-                    if milestones:
-                        st.write("**Milestones:**")
-                        for milestone in milestones[:3]:  # Show first 3
-                            status_icon = "✅" if milestone.get('status') == 'completed' else "🔄" if milestone.get('status') == 'in_progress' else "⏳"
-                            st.write(f"{status_icon} {milestone.get('title', 'Milestone')}")
-                            if milestone.get('description'):
-                                st.caption(milestone['description'])
-                    
-                    # Action buttons
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        if st.button(f"Continue Path", key=f"continue_{i}"):
-                            st.info("Continuing learning path...")
-                    with col_b:
-                        if st.button(f"View Details", key=f"details_{i}"):
-                            st.info("Showing detailed view...")
+    # Render the complete learning path management system
+    render_learning_path_management_system(api, session_manager)
 
 def show_user_profile():
     """User profile management"""
@@ -892,7 +811,7 @@ def show_user_profile():
     
     # Load user profile from API if not already loaded
     if st.session_state.user_id and not st.session_state.user_profile:
-        user_data = api.get_user(st.session_state.user_id)
+        user_data = asyncio.run(api.get_user_profile(st.session_state.user_id))
         if user_data and "user" in user_data:
             st.session_state.user_profile = user_data["user"]
     
@@ -1057,7 +976,7 @@ def show_privacy_controls():
         st.subheader("Privacy Settings")
         
         # Get current settings
-        settings_data = api.get_privacy_settings(st.session_state.user_id)
+        settings_data = asyncio.run(api.get_privacy_settings(st.session_state.user_id))
         settings = settings_data.get("settings", {}) if settings_data else {}
         
         with st.form("privacy_settings"):
@@ -1097,7 +1016,7 @@ def show_privacy_controls():
         
         if st.button("Export Data", key="export_data"):
             with st.spinner("Preparing your data export..."):
-                result = api.export_user_data(st.session_state.user_id)
+                result = asyncio.run(api.export_user_data(st.session_state.user_id))
                 if result:
                     st.success("✅ Data export ready!")
                     
