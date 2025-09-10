@@ -1136,6 +1136,107 @@ class EnhancedEdAgentAPI:
             logger.error(f"Delete user data error: {e}")
             return None
     
+    async def get_privacy_audit_log(self, user_id: str, limit: int = 100) -> Optional[List[Dict[str, Any]]]:
+        """Get privacy audit log"""
+        try:
+            response = await self._make_request(
+                "GET",
+                "/privacy/audit-log",
+                params={"limit": limit}
+            )
+            
+            if response.success:
+                return response.data.get("audit_entries", [])
+            else:
+                self._handle_api_error(response.error, "get privacy audit log")
+                return []
+        
+        except Exception as e:
+            logger.error(f"Get privacy audit log error: {e}")
+            return []
+    
+    async def log_privacy_action(self, user_id: str, action: str, details: str) -> bool:
+        """Log privacy-related action"""
+        try:
+            response = await self._make_request(
+                "POST",
+                "/privacy/audit-log",
+                json_data={
+                    "action": action,
+                    "details": details,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            
+            if response.success:
+                return True
+            else:
+                self._handle_api_error(response.error, "log privacy action")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Log privacy action error: {e}")
+            return False
+    
+    async def get_consent_status(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user consent status"""
+        try:
+            response = await self._make_request(
+                "GET",
+                "/privacy/consent"
+            )
+            
+            if response.success:
+                return response.data
+            else:
+                self._handle_api_error(response.error, "get consent status")
+                return None
+        
+        except Exception as e:
+            logger.error(f"Get consent status error: {e}")
+            return None
+    
+    async def update_consent(self, user_id: str, consent_data: Dict[str, Any]) -> bool:
+        """Update user consent"""
+        try:
+            response = await self._make_request(
+                "PUT",
+                "/privacy/consent",
+                json_data=consent_data
+            )
+            
+            if response.success:
+                return True
+            else:
+                self._handle_api_error(response.error, "update consent")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Update consent error: {e}")
+            return False
+    
+    async def request_data_export_email(self, user_id: str, export_format: str = "json") -> bool:
+        """Request data export via email"""
+        try:
+            response = await self._make_request(
+                "POST",
+                "/privacy/export-email",
+                json_data={
+                    "format": export_format,
+                    "include_sensitive": False
+                }
+            )
+            
+            if response.success:
+                return True
+            else:
+                self._handle_api_error(response.error, "request data export email")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Request data export email error: {e}")
+            return False
+    
     # Utility methods
     def get_connection_status(self) -> Dict[str, Any]:
         """Get API connection status"""

@@ -28,6 +28,7 @@ from streamlit_components import (
 from streamlit_api_client import EnhancedEdAgentAPI, safe_parse_datetime
 from streamlit_session_manager import SessionManager
 from streamlit_auth_components import AuthenticationComponents
+from streamlit_privacy_components import PrivacyComponents
 
 # Configuration
 API_BASE_URL = StreamlitConfig.API_BASE_URL
@@ -249,6 +250,7 @@ class EdAgentAPI:
 session_manager = SessionManager()
 api = EnhancedEdAgentAPI(API_BASE_URL, session_manager)
 auth_components = AuthenticationComponents(api, session_manager)
+privacy_components = PrivacyComponents(api, session_manager)
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -967,86 +969,8 @@ def show_user_profile():
             st.rerun()
 
 def show_privacy_controls():
-    """Privacy and data management"""
-    st.header("🔒 Privacy & Data Management")
-    
-    tab1, tab2, tab3 = st.tabs(["Settings", "Data Export", "Data Deletion"])
-    
-    with tab1:
-        st.subheader("Privacy Settings")
-        
-        # Get current settings
-        settings_data = asyncio.run(api.get_privacy_settings(st.session_state.user_id))
-        settings = settings_data.get("settings", {}) if settings_data else {}
-        
-        with st.form("privacy_settings"):
-            allow_analytics = st.checkbox(
-                "Allow analytics data collection",
-                value=settings.get("allow_analytics", True)
-            )
-            
-            allow_personalization = st.checkbox(
-                "Allow personalization features",
-                value=settings.get("allow_personalization", True)
-            )
-            
-            allow_marketing = st.checkbox(
-                "Allow marketing communications",
-                value=settings.get("allow_marketing", False)
-            )
-            
-            auto_delete = st.checkbox(
-                "Auto-delete old conversations",
-                value=settings.get("auto_delete_conversations", False)
-            )
-            
-            retention_days = st.number_input(
-                "Conversation retention (days)",
-                min_value=30,
-                max_value=3650,
-                value=settings.get("conversation_retention_days", 365)
-            )
-            
-            if st.form_submit_button("Update Settings"):
-                st.success("✅ Privacy settings updated!")
-    
-    with tab2:
-        st.subheader("Export Your Data")
-        st.write("Download all your data in JSON format.")
-        
-        if st.button("Export Data", key="export_data"):
-            with st.spinner("Preparing your data export..."):
-                result = asyncio.run(api.export_user_data(st.session_state.user_id))
-                if result:
-                    st.success("✅ Data export ready!")
-                    
-                    # Convert to JSON string for download
-                    json_str = json.dumps(result, indent=2)
-                    st.download_button(
-                        label="Download Export",
-                        data=json_str,
-                        file_name=f"edagent_export_{st.session_state.user_id}.json",
-                        mime="application/json"
-                    )
-                else:
-                    st.error("Failed to export data")
-    
-    with tab3:
-        st.subheader("Delete Your Data")
-        st.warning("⚠️ This action cannot be undone!")
-        
-        data_types = st.multiselect(
-            "Select data types to delete:",
-            ["conversations", "assessments", "learning_paths", "profile", "all"]
-        )
-        
-        confirm = st.checkbox("I understand this action cannot be undone")
-        
-        if st.button("Delete Selected Data", key="delete_data", type="secondary"):
-            if confirm and data_types:
-                st.error("Data deletion functionality would be implemented here")
-            else:
-                st.error("Please confirm and select data types to delete")
+    """Enhanced privacy and data management using PrivacyComponents"""
+    privacy_components.render_privacy_dashboard()
 
 def show_analytics():
     """Analytics and progress tracking"""
