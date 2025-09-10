@@ -22,6 +22,22 @@ from tenacity import (
     before_sleep_log
 )
 
+# Import enhanced error handling and loading systems
+from streamlit_error_handler import (
+    error_handler, ErrorCategory, ErrorContext, UserFriendlyError, 
+    ErrorSeverity, with_retry as error_with_retry
+)
+from streamlit_loading_components import (
+    show_loading, LoadingStyle, LoadingPriority, APILoadingComponents,
+    with_loading_and_error_handling
+)
+from streamlit_retry_system import (
+    retry_manager, RetryConfig, RetryConfigs, with_retry as retry_with_retry
+)
+from streamlit_connectivity_monitor import (
+    connectivity_monitor, require_online_connection, with_offline_fallback
+)
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -476,123 +492,156 @@ class EnhancedEdAgentAPI:
                 response_time=response_time
             )
     
-    def _handle_api_error(self, error: APIError, context: str) -> None:
-        """Handle API errors with user-friendly messages"""
-        error_messages = {
-            APIErrorType.AUTHENTICATION_ERROR: {
-                "title": "🔐 Authentication Required",
-                "message": "Your session has expired. Please log in again.",
-                "action": "login_required"
-            },
-            APIErrorType.AUTHORIZATION_ERROR: {
-                "title": "🚫 Access Denied",
-                "message": "You don't have permission to perform this action.",
-                "action": "permission_denied"
-            },
-            APIErrorType.VALIDATION_ERROR: {
-                "title": "⚠️ Invalid Input",
-                "message": "Please check your input and try again.",
-                "action": "fix_input"
-            },
-            APIErrorType.RATE_LIMIT_ERROR: {
-                "title": "⏱️ Rate Limit Exceeded",
-                "message": f"Too many requests. Please wait {error.retry_after or 60} seconds.",
-                "action": "wait_and_retry"
-            },
-            APIErrorType.SERVER_ERROR: {
-                "title": "🔧 Server Error",
-                "message": "The server is experiencing issues. Please try again later.",
-                "action": "retry_later"
-            },
-            APIErrorType.NETWORK_ERROR: {
-                "title": "🌐 Connection Error",
-                "message": "Please check your internet connection and try again.",
-                "action": "check_connection"
-            },
-            APIErrorType.TIMEOUT_ERROR: {
-                "title": "⏰ Request Timeout",
-                "message": "The request took too long. Please try again.",
-                "action": "retry"
-            }
+    async def _handle_api_error(self, error: APIError, context: str) -> None:
+        """Handle API errors with enhanced error handling system"""
+        # Map API error types to enhanced error categories
+        error_category_mapping = {
+            APIErrorType.AUTHENTICATION_ERROR: ErrorCategory.AUTHENTICATION,
+            APIErrorType.AUTHORIZATION_ERROR: ErrorCategory.AUTHORIZATION,
+            APIErrorType.VALIDATION_ERROR: ErrorCategory.VALIDATION,
+            APIErrorType.RATE_LIMIT_ERROR: ErrorCategory.RATE_LIMIT,
+            APIErrorType.SERVER_ERROR: ErrorCategory.SERVER,
+            APIErrorType.NETWORK_ERROR: ErrorCategory.NETWORK,
+            APIErrorType.TIMEOUT_ERROR: ErrorCategory.TIMEOUT,
+            APIErrorType.UNKNOWN_ERROR: ErrorCategory.UNKNOWN
         }
         
-        error_info = error_messages.get(error.error_type, {
-            "title": "❌ Unknown Error",
-            "message": "An unexpected error occurred. Please try again.",
-            "action": "retry"
-        })
+        # Create enhanced error context
+        error_context = ErrorContext(
+            operation=context,
+            user_id=self.session_manager.get_current_user_id(),
+            additional_data={
+                "status_code": error.status_code,
+                "retry_after": error.retry_after,
+                "is_retryable": error.is_retryable
+            }
+        )
         
-        # Display error in Streamlit
-        st.error(f"{error_info['title']}: {error_info['message']}")
+        # Create user-friendly error
+        category = error_category_mapping.get(error.error_type, ErrorCategory.UNKNOWN)
+        user_error = UserFriendlyError(
+            title=f"API Error in {context}",
+            message=error.message,
+            category=category,
+            severity=ErrorSeverity.HIGH if error.error_type in [
+                APIErrorType.AUTHENTICATION_ERROR, 
+                APIErrorType.SERVER_ERROR
+            ] else ErrorSeverity.MEDIUM,
+            is_retryable=error.is_retryable,
+            retry_after=error.retry_after,
+            error_code=str(error.error_type.value)
+        )
         
-        # Handle specific actions
-        if error_info["action"] == "login_required":
-            self.session_manager.clear_session()
-            st.rerun()
+        # Handle error with enhanced system
+        await error_handler.handle_error(user_error, error_context)
         
         logger.error(f"API error in {context}: {error}")
     
     # Authentication methods
+    @with_retry("user_registration", RetryConfigs.CRITICAL_OPERATION)
     async def register_user(self, email: str, password: str, name: str) -> AuthResult:
-        """Register a new user"""
-        try:
-            response = await self._make_request(
-                "POST",
-                "/auth/register",
-                json_data={
-                    "email": email,
-                    "password": password,
-                    "name": name
-                }
-            )
-            
-            if response.success:
-                data = response.data
-                return AuthResult(
-                    success=True,
-                    access_token=data.get("access_token"),
-                    user_id=data.get("user_id"),
-                    email=data.get("email"),
-                    name=data.get("name"),
-                    expires_at=safe_parse_datetime(data.get("expires_at"))
-                )
-            else:
-                self._handle_api_error(response.error, "user registration")
-                return AuthResult(success=False, error=response.error.message)
+        """Register a new user with enhanced error handling and retry logic"""
         
-        except Exception as e:
-            logger.error(f"Registration error: {e}")
-            return AuthResult(success=False, error=str(e))
+        # Check connectivity for critical operations
+        if not require_online_connection("authentication"):
+            return AuthResult(success=False, error="Registration requires internet connection")
+        
+        with APILoadingComponents.api_call_loading("User Registration", "/auth/register"):
+            try:
+                response = await self._make_request(
+                    "POST",
+                    "/auth/register",
+                    json_data={
+                        "email": email,
+                        "password": password,
+                        "name": name
+                    }
+                )
+                
+                if response.success:
+                    data = response.data
+                    result = AuthResult(
+                        success=True,
+                        access_token=data.get("access_token"),
+                        user_id=data.get("user_id"),
+                        email=data.get("email"),
+                        name=data.get("name"),
+                        expires_at=safe_parse_datetime(data.get("expires_at"))
+                    )
+                    
+                    # Cache successful registration for offline reference
+                    from streamlit_connectivity_monitor import offline_data_manager
+                    offline_data_manager.cache_data("last_registration", {
+                        "email": email,
+                        "name": name,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    return result
+                else:
+                    await self._handle_api_error(response.error, "user registration")
+                    return AuthResult(success=False, error=response.error.message)
+            
+            except Exception as e:
+                # Enhanced error handling
+                error_context = ErrorContext(
+                    operation="user_registration",
+                    additional_data={"email": email, "name": name}
+                )
+                await error_handler.handle_error(e, error_context)
+                return AuthResult(success=False, error=str(e))
     
+    @with_retry("user_login", RetryConfigs.CRITICAL_OPERATION)
     async def login_user(self, email: str, password: str) -> AuthResult:
-        """Login user with email and password"""
-        try:
-            response = await self._make_request(
-                "POST",
-                "/auth/login",
-                json_data={
-                    "email": email,
-                    "password": password
-                }
-            )
-            
-            if response.success:
-                data = response.data
-                return AuthResult(
-                    success=True,
-                    access_token=data.get("access_token"),
-                    user_id=data.get("user_id"),
-                    email=data.get("email"),
-                    name=data.get("name"),
-                    expires_at=safe_parse_datetime(data.get("expires_at"))
-                )
-            else:
-                self._handle_api_error(response.error, "user login")
-                return AuthResult(success=False, error=response.error.message)
+        """Login user with enhanced error handling and retry logic"""
         
-        except Exception as e:
-            logger.error(f"Login error: {e}")
-            return AuthResult(success=False, error=str(e))
+        # Check connectivity for authentication
+        if not require_online_connection("authentication"):
+            return AuthResult(success=False, error="Login requires internet connection")
+        
+        with APILoadingComponents.api_call_loading("User Login", "/auth/login"):
+            try:
+                response = await self._make_request(
+                    "POST",
+                    "/auth/login",
+                    json_data={
+                        "email": email,
+                        "password": password
+                    }
+                )
+                
+                if response.success:
+                    data = response.data
+                    result = AuthResult(
+                        success=True,
+                        access_token=data.get("access_token"),
+                        user_id=data.get("user_id"),
+                        email=data.get("email"),
+                        name=data.get("name"),
+                        expires_at=safe_parse_datetime(data.get("expires_at"))
+                    )
+                    
+                    # Cache successful login for session recovery
+                    from streamlit_connectivity_monitor import offline_data_manager
+                    offline_data_manager.cache_data("last_login", {
+                        "email": email,
+                        "user_id": result.user_id,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    return result
+                else:
+                    await self._handle_api_error(response.error, "user login")
+                    return AuthResult(success=False, error=response.error.message)
+            
+            except Exception as e:
+                # Enhanced error handling with context
+                error_context = ErrorContext(
+                    operation="user_login",
+                    additional_data={"email": email}
+                )
+                await error_handler.handle_error(e, error_context)
+                return AuthResult(success=False, error=str(e))
     
     async def refresh_token(self) -> bool:
         """Refresh authentication token"""
@@ -620,40 +669,68 @@ class EnhancedEdAgentAPI:
             return False  
   
     # Conversation methods
+    @with_offline_fallback("chat")
+    @with_retry("send_message", RetryConfigs.STANDARD_OPERATION)
     async def send_message(self, user_id: str, message: str) -> ConversationResponse:
-        """Send a chat message and get AI response"""
-        try:
-            response = await self._make_request(
-                "POST",
-                "/conversations/message",
-                json_data={
-                    "user_id": user_id,
-                    "message": message
-                }
-            )
-            
-            if response.success:
-                data = response.data
-                return ConversationResponse(
-                    message=data.get("message", ""),
-                    response_type=data.get("response_type", "text"),
-                    confidence_score=data.get("confidence_score", 1.0),
-                    suggested_actions=data.get("suggested_actions", []),
-                    content_recommendations=data.get("content_recommendations", []),
-                    follow_up_questions=data.get("follow_up_questions", []),
-                    metadata=data.get("metadata", {})
-                )
-            else:
-                self._handle_api_error(response.error, "send message")
-                return ConversationResponse(
-                    message="I'm sorry, I'm having trouble connecting right now. Please try again later."
-                )
+        """Send a chat message with enhanced error handling and offline support"""
         
-        except Exception as e:
-            logger.error(f"Send message error: {e}")
-            return ConversationResponse(
-                message="An unexpected error occurred. Please try again."
-            )
+        with APILoadingComponents.api_call_loading("Sending Message", "/conversations/message"):
+            try:
+                response = await self._make_request(
+                    "POST",
+                    "/conversations/message",
+                    json_data={
+                        "user_id": user_id,
+                        "message": message
+                    }
+                )
+                
+                if response.success:
+                    data = response.data
+                    result = ConversationResponse(
+                        message=data.get("message", ""),
+                        response_type=data.get("response_type", "text"),
+                        confidence_score=data.get("confidence_score", 1.0),
+                        suggested_actions=data.get("suggested_actions", []),
+                        content_recommendations=data.get("content_recommendations", []),
+                        follow_up_questions=data.get("follow_up_questions", []),
+                        metadata=data.get("metadata", {})
+                    )
+                    
+                    # Cache conversation for offline access
+                    from streamlit_connectivity_monitor import offline_data_manager
+                    offline_data_manager.cache_data(f"conversation_{user_id}_latest", {
+                        "user_message": message,
+                        "ai_response": result.message,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    return result
+                else:
+                    await self._handle_api_error(response.error, "send message")
+                    return ConversationResponse(
+                        message="I'm sorry, I'm having trouble connecting right now. Please try again later."
+                    )
+            
+            except Exception as e:
+                # Enhanced error handling with fallback
+                error_context = ErrorContext(
+                    operation="send_message",
+                    user_id=user_id,
+                    additional_data={"message_length": len(message)}
+                )
+                
+                # Try to provide helpful offline response
+                if not connectivity_monitor.is_online():
+                    return ConversationResponse(
+                        message="I'm currently offline. Your message has been noted, and I'll respond when connection is restored.",
+                        metadata={"offline_mode": True}
+                    )
+                
+                await error_handler.handle_error(e, error_context)
+                return ConversationResponse(
+                    message="An unexpected error occurred. Please try again."
+                )
     
     async def get_conversation_history(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get conversation history for user"""

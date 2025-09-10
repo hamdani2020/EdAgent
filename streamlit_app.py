@@ -358,21 +358,28 @@ def main_dashboard():
         render_resume_analyzer()
 
 def show_chat_interface():
-    """Enhanced chat interface with full API integration and WebSocket support"""
+    """Enhanced chat interface with comprehensive error handling and loading states"""
     st.header("💬 Chat with EdAgent")
+    
+    # Import enhanced error handling components
+    from streamlit_error_handler import error_context
+    from streamlit_loading_components import show_loading, LoadingStyle
+    from streamlit_connectivity_monitor import require_online_connection
     
     # Check authentication
     if not session_manager.is_authenticated():
         st.warning("🔐 Please log in to use the chat feature.")
         return
     
+    # Check connectivity for chat feature
+    if not require_online_connection("chat"):
+        return
+    
     user_info = session_manager.get_current_user()
     
-    # Conversation state is now initialized globally
-    
-    # Load conversation history from API if not already loaded
+    # Load conversation history with enhanced error handling
     if not st.session_state.conversation_loaded:
-        with st.spinner("Loading conversation history..."):
+        with error_context("load_conversation_history", loading_message="Loading conversation history..."):
             try:
                 history = asyncio.run(api.get_conversation_history(user_info.user_id, limit=50))
                 if history:
@@ -396,7 +403,7 @@ def show_chat_interface():
                     }]
                 st.session_state.conversation_loaded = True
             except Exception as e:
-                st.error(f"Failed to load conversation history: {str(e)}")
+                # Enhanced error handling will show user-friendly message
                 # Fallback to empty conversation
                 st.session_state.chat_messages = [{
                     "role": "assistant",
@@ -554,8 +561,8 @@ def show_chat_interface():
         }
         st.session_state.chat_messages.append(user_message)
         
-        # Show loading state
-        with st.spinner("EdAgent is thinking..."):
+        # Enhanced message sending with comprehensive error handling
+        with error_context("send_chat_message", loading_message="EdAgent is thinking..."):
             try:
                 # Try WebSocket first if connected
                 if st.session_state.ws_connection_status == "connected":
@@ -568,7 +575,7 @@ def show_chat_interface():
                                 response_content = response.get("content", "I received your message via WebSocket!")
                                 response_metadata = response.get("metadata", {})
                             else:
-                                # Fallback to HTTP API
+                                # Fallback to HTTP API with enhanced error handling
                                 chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
                                 response_content = chat_response.message
                                 response_metadata = {
@@ -582,7 +589,7 @@ def show_chat_interface():
                     except Exception as ws_error:
                         st.warning(f"WebSocket failed, using HTTP API: {str(ws_error)}")
                         st.session_state.ws_connection_status = "error"
-                        # Fallback to HTTP API
+                        # Fallback to HTTP API with enhanced error handling
                         chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
                         response_content = chat_response.message
                         response_metadata = {
@@ -592,7 +599,7 @@ def show_chat_interface():
                             "confidence_score": chat_response.confidence_score
                         }
                 else:
-                    # Use HTTP API
+                    # Use HTTP API with enhanced error handling
                     chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
                     response_content = chat_response.message
                     response_metadata = {
@@ -612,15 +619,15 @@ def show_chat_interface():
                 st.session_state.chat_messages.append(ai_message)
                 
             except Exception as e:
-                # Error handling with user-friendly message
+                # Enhanced error handling will display user-friendly messages
+                # Add fallback message to chat
                 error_message = {
                     "role": "assistant",
-                    "content": f"I'm sorry, I'm having trouble connecting right now. Please try again later. (Error: {str(e)})",
+                    "content": "I'm sorry, I'm having trouble connecting right now. Please try again later.",
                     "timestamp": datetime.now(),
                     "metadata": {"error": True}
                 }
                 st.session_state.chat_messages.append(error_message)
-                st.error(f"Chat error: {str(e)}")
         
         st.rerun()
     
