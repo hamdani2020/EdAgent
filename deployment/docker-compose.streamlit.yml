@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  streamlit-frontend:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile.streamlit
+    container_name: edagent-streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      # API Configuration
+      - EDAGENT_API_URL=${EDAGENT_API_URL:-http://localhost:8000/api/v1}
+      - EDAGENT_WS_URL=${EDAGENT_WS_URL:-ws://localhost:8000/api/v1/ws}
+      
+      # Environment
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      
+      # Security
+      - SESSION_TIMEOUT=${SESSION_TIMEOUT:-480}
+      - ENCRYPT_SESSION_DATA=${ENCRYPT_SESSION_DATA:-false}
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      
+      # Features
+      - FEATURE_WEBSOCKET_CHAT=${FEATURE_WEBSOCKET_CHAT:-true}
+      - FEATURE_ANALYTICS=${FEATURE_ANALYTICS:-true}
+      - FEATURE_FILE_UPLOAD=${FEATURE_FILE_UPLOAD:-true}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_TO_FILE=${LOG_TO_FILE:-false}
+      - STRUCTURED_LOGGING=${STRUCTURED_LOGGING:-false}
+      
+      # Performance
+      - API_TIMEOUT=${API_TIMEOUT:-30}
+      - API_MAX_RETRIES=${API_MAX_RETRIES:-3}
+    
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    
+    networks:
+      - edagent-network
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    depends_on:
+      - edagent-api
+    
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.streamlit.rule=Host(`app.edagent.local`)"
+      - "traefik.http.services.streamlit.loadbalancer.server.port=8501"
+
+  # Nginx reverse proxy for production
+  nginx:
+    image: nginx:alpine
+    container_name: edagent-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - edagent-network
+    depends_on:
+      - streamlit-frontend
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # Redis for session storage (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: edagent-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - edagent-network
+    restart: unless-stopped
+    profiles:
+      - production
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-edagent123}
+
+networks:
+  edagent-network:
+    driver: bridge
+
+volumes:
+  redis_data:
