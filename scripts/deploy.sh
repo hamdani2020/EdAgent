@@ -70,7 +70,7 @@ check_prerequisites() {
 
 # Load environment configuration
 load_environment() {
-    local env_file="$PROJECT_ROOT/config/${ENVIRONMENT}.env"
+    local env_file="$PROJECT_ROOT/.env"
     
     if [[ -f "$env_file" ]]; then
         log_info "Loading environment configuration from $env_file"

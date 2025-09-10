@@ -795,6 +795,105 @@ class EnhancedEdAgentAPI:
             logger.error(f"Get user assessments error: {e}")
             return []
     
+    # User Profile methods
+    async def get_user_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user profile information"""
+        try:
+            response = await self._make_request(
+                "GET",
+                f"/users/{user_id}"
+            )
+            
+            if response.success:
+                return response.data
+            else:
+                self._handle_api_error(response.error, "get user profile")
+                return None
+        
+        except Exception as e:
+            logger.error(f"Get user profile error: {e}")
+            return None
+    
+    async def update_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> bool:
+        """Update user learning preferences"""
+        try:
+            response = await self._make_request(
+                "PUT",
+                f"/users/{user_id}/preferences",
+                json_data={
+                    "learning_preferences": preferences
+                }
+            )
+            
+            if response.success:
+                return True
+            else:
+                self._handle_api_error(response.error, "update user preferences")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Update user preferences error: {e}")
+            return False
+    
+    async def update_user_skills(self, user_id: str, skills: Dict[str, Dict[str, Any]]) -> bool:
+        """Update user skill levels"""
+        try:
+            response = await self._make_request(
+                "PUT",
+                f"/users/{user_id}/skills",
+                json_data={
+                    "skills": skills
+                }
+            )
+            
+            if response.success:
+                return True
+            else:
+                self._handle_api_error(response.error, "update user skills")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Update user skills error: {e}")
+            return False
+    
+    async def get_user_goals(self, user_id: str) -> List[str]:
+        """Get user career goals"""
+        try:
+            response = await self._make_request(
+                "GET",
+                f"/users/{user_id}/goals"
+            )
+            
+            if response.success:
+                data = response.data
+                return data.get("career_goals", [])
+            else:
+                self._handle_api_error(response.error, "get user goals")
+                return []
+        
+        except Exception as e:
+            logger.error(f"Get user goals error: {e}")
+            return []
+    
+    async def update_user_goals(self, user_id: str, goals: List[str]) -> bool:
+        """Update user career goals"""
+        try:
+            response = await self._make_request(
+                "PUT",
+                f"/users/{user_id}/goals",
+                json_data=goals
+            )
+            
+            if response.success:
+                return True
+            else:
+                self._handle_api_error(response.error, "update user goals")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Update user goals error: {e}")
+            return False
+
     # Learning Path methods
     async def create_learning_path(self, user_id: str, goal: str) -> Optional[LearningPath]:
         """Create a learning path"""
