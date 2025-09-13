@@ -25,6 +25,10 @@ from streamlit_components import (
     render_progress_dashboard, render_resource_recommendations,
     render_interview_prep_widget, render_resume_analyzer, render_career_roadmap
 )
+from streamlit_api_client import EnhancedEdAgentAPI, safe_parse_datetime
+from streamlit_session_manager import SessionManager
+from streamlit_auth_components import AuthenticationComponents
+from streamlit_privacy_components import PrivacyComponents
 
 # Configuration
 API_BASE_URL = StreamlitConfig.API_BASE_URL
@@ -38,42 +42,175 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Import enhanced UI/UX components
+from streamlit_responsive_ui import (
+    responsive_ui, EnhancedCard, ResponsiveColumns, 
+    EnhancedForm, FormValidator
+)
+from streamlit_enhanced_tables import (
+    EnhancedDataTable, ColumnConfig, TableConfig, ColumnType,
+    create_user_table, create_assessment_table, create_learning_path_table
+)
+from streamlit_accessibility import (
+    accessibility_framework, make_accessible_button, 
+    make_accessible_form, add_skip_links, announce_to_screen_reader
+)
+from streamlit_enhanced_navigation import (
+    navigation_system, create_navigation_item, render_enhanced_tabs,
+    render_enhanced_breadcrumb, set_current_navigation_item
+)
+
+# Initialize enhanced UI/UX systems
+responsive_ui._inject_responsive_css()
+accessibility_framework._inject_accessibility_css()
+
+# Add skip links for accessibility
+add_skip_links([
+    {"target": "main-content", "text": "Skip to main content"},
+    {"target": "navigation", "text": "Skip to navigation"},
+    {"target": "sidebar", "text": "Skip to sidebar"}
+])
+
+# Enhanced CSS with responsive design and accessibility
 st.markdown("""
 <style>
+    /* Main application styles with enhanced responsive design */
     .main-header {
-        font-size: 2.5rem;
+        font-size: clamp(1.5rem, 4vw, 2.5rem);
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
         margin-bottom: 2rem;
+        line-height: 1.2;
     }
+    
     .chat-container {
         height: 400px;
         overflow-y: auto;
         border: 1px solid #ddd;
-        border-radius: 10px;
+        border-radius: 12px;
         padding: 1rem;
         background-color: #f8f9fa;
+        transition: all 0.3s ease;
     }
+    
+    .chat-container:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    
     .metric-card {
         background-color: #ffffff;
-        padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         margin: 0.5rem 0;
+        transition: all 0.3s ease;
+        border: 1px solid #e0e0e0;
     }
+    
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+    
     .success-message {
         color: #28a745;
         font-weight: bold;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
+    
     .error-message {
         color: #dc3545;
         font-weight: bold;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
+    
     .info-message {
         color: #17a2b8;
         font-weight: bold;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    /* Enhanced button styles */
+    .stButton > button {
+        border-radius: 8px;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        min-height: 44px;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* Enhanced form inputs */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stSelectbox > div > div > select {
+        border-radius: 8px;
+        border: 2px solid #e0e0e0;
+        padding: 0.75rem;
+        transition: border-color 0.2s ease;
+        min-height: 44px;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus,
+    .stSelectbox > div > div > select:focus {
+        border-color: #1f77b4;
+        box-shadow: 0 0 0 3px rgba(31, 119, 180, 0.1);
+    }
+    
+    /* Mobile responsive adjustments */
+    @media (max-width: 768px) {
+        .main-header {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .metric-card {
+            padding: 1rem;
+            margin: 0.25rem 0;
+        }
+        
+        .chat-container {
+            height: 300px;
+            padding: 0.75rem;
+        }
+        
+        .stButton > button {
+            width: 100%;
+            padding: 1rem;
+        }
+    }
+    
+    /* High contrast mode support */
+    @media (prefers-contrast: high) {
+        .metric-card {
+            border: 2px solid #000;
+        }
+        
+        .chat-container {
+            border: 2px solid #000;
+        }
+    }
+    
+    /* Reduced motion support */
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -242,381 +379,647 @@ class EdAgentAPI:
             st.error(f"Failed to send chat message: {str(e)}")
             return {"message": "I'm sorry, I'm having trouble connecting to the AI service right now. Please try again later."}
 
-# Initialize API client
-api = EdAgentAPI(API_BASE_URL)
+# Initialize enhanced components
+session_manager = SessionManager()
+api = EnhancedEdAgentAPI(API_BASE_URL, session_manager)
+auth_components = AuthenticationComponents(api, session_manager)
+privacy_components = PrivacyComponents(api, session_manager)
 
 def initialize_session_state():
     """Initialize session state variables"""
-    if "user_id" not in st.session_state:
-        st.session_state.user_id = None
-    if "access_token" not in st.session_state:
-        st.session_state.access_token = None
-    if "user_email" not in st.session_state:
-        st.session_state.user_email = None
-    if "user_name" not in st.session_state:
-        st.session_state.user_name = None
-    if "user_profile" not in st.session_state:
-        st.session_state.user_profile = None
+    # Load session state from session manager
+    session_manager.load_session_state()
+    
+    # Initialize chat messages if not exists
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
     if "current_assessment" not in st.session_state:
         st.session_state.current_assessment = None
     if "learning_paths" not in st.session_state:
         st.session_state.learning_paths = []
-    if "show_registration" not in st.session_state:
-        st.session_state.show_registration = False
+    
+    # Initialize user profile and other session variables
+    if "user_profile" not in st.session_state:
+        st.session_state.user_profile = None
+    if "conversation_loaded" not in st.session_state:
+        st.session_state.conversation_loaded = False
+    if "conversation_page" not in st.session_state:
+        st.session_state.conversation_page = 0
+    if "ws_connection_status" not in st.session_state:
+        st.session_state.ws_connection_status = "disconnected"
+    if "confirm_clear" not in st.session_state:
+        st.session_state.confirm_clear = False
 
 def authenticate_user():
-    """Handle user authentication with email/password"""
-    st.sidebar.header("🔐 Authentication")
-    
-    if st.session_state.user_id is None:
-        # Login/Register tabs
-        auth_tab = st.sidebar.radio("Choose action:", ["Login", "Register"])
-        
-        if auth_tab == "Login":
-            with st.sidebar.form("login_form"):
-                st.subheader("Login")
-                email = st.text_input("Email:", placeholder="your.email@example.com")
-                password = st.text_input("Password:", type="password")
-                
-                login_submitted = st.form_submit_button("Login")
-                
-                if login_submitted:
-                    if email and password:
-                        login_result = api.login_user(email, password)
-                        if login_result:
-                            # Store authentication data
-                            st.session_state.access_token = login_result.get("access_token")
-                            st.session_state.user_id = login_result.get("user_id")
-                            st.session_state.user_email = login_result.get("email")
-                            
-                            # Try to get user profile
-                            user_data = api.get_user(st.session_state.user_id)
-                            if user_data:
-                                st.session_state.user_profile = user_data.get("user")
-                            
-                            st.sidebar.success("✅ Logged in successfully!")
-                            st.rerun()
-                    else:
-                        st.sidebar.error("Please enter both email and password")
-        
-        else:  # Register
-            with st.sidebar.form("register_form"):
-                st.subheader("Register")
-                name = st.text_input("Full Name:", placeholder="John Doe")
-                email = st.text_input("Email:", placeholder="your.email@example.com")
-                password = st.text_input("Password:", type="password", 
-                                       help="Must contain uppercase, lowercase, number, and special character")
-                
-                # Password strength indicator
-                if password:
-                    strength_score = 0
-                    requirements = []
-                    
-                    if len(password) >= 8:
-                        strength_score += 1
-                    else:
-                        requirements.append("At least 8 characters")
-                    
-                    if any(c.isupper() for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One uppercase letter")
-                    
-                    if any(c.islower() for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One lowercase letter")
-                    
-                    if any(c.isdigit() for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One number")
-                    
-                    if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
-                        strength_score += 1
-                    else:
-                        requirements.append("One special character")
-                    
-                    # Show strength
-                    if strength_score < 3:
-                        st.error(f"Weak password. Missing: {', '.join(requirements)}")
-                    elif strength_score < 5:
-                        st.warning(f"Medium password. Missing: {', '.join(requirements)}")
-                    else:
-                        st.success("Strong password! ✓")
-                confirm_password = st.text_input("Confirm Password:", type="password")
-                
-                register_submitted = st.form_submit_button("Register")
-                
-                if register_submitted:
-                    if name and email and password and confirm_password:
-                        if password != confirm_password:
-                            st.sidebar.error("Passwords do not match")
-                        else:
-                            register_result = api.register_user(email, password, name)
-                            if register_result:
-                                # Store authentication data
-                                st.session_state.access_token = register_result.get("access_token")
-                                st.session_state.user_id = register_result.get("user_id")
-                                st.session_state.user_email = register_result.get("email")
-                                st.session_state.user_name = name
-                                
-                                st.sidebar.success("✅ Registered and logged in successfully!")
-                                st.rerun()
-                    else:
-                        st.sidebar.error("Please fill in all fields")
-    
-    else:
-        # Show logged in user info
-        user_display = st.session_state.user_email or st.session_state.user_name or st.session_state.user_id
-        st.sidebar.success(f"👤 Logged in as: {user_display}")
-        
-        # User menu
-        with st.sidebar.expander("Account", expanded=False):
-            st.write(f"**Email:** {st.session_state.user_email}")
-            st.write(f"**Name:** {st.session_state.user_name}")
-            st.write(f"**User ID:** {st.session_state.user_id}")
-        
-        if st.sidebar.button("Logout", key="logout_btn"):
-            # Clear session state
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+    """Handle user authentication with enhanced components"""
+    return auth_components.render_authentication_interface()
 
 def show_profile_setup():
-    """Show profile setup form for new users"""
-    if st.session_state.get("show_profile_setup", False):
-        st.header("📝 Complete Your Profile")
-        st.write("Welcome! Let's set up your learning profile to provide personalized recommendations.")
-        
-        with st.form("profile_setup_form"):
-            st.subheader("Career Goals")
-            career_goals = st.text_area(
-                "What are your career goals? (one per line)",
-                placeholder="e.g.,\nBecome a software developer\nLearn data science\nTransition to tech"
-            ).split('\n')
-            career_goals = [goal.strip() for goal in career_goals if goal.strip()]
-            
-            st.subheader("Learning Preferences")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                learning_style = st.selectbox(
-                    "Preferred Learning Style:",
-                    ["visual", "auditory", "kinesthetic", "reading"]
-                )
-                
-                time_commitment = st.selectbox(
-                    "Time Commitment (hours per week):",
-                    ["1-5", "5-10", "10-20", "20+"]
-                )
-                
-                budget_preference = st.selectbox(
-                    "Budget Preference:",
-                    ["free", "low_cost", "moderate", "premium"]
-                )
-            
-            with col2:
-                preferred_platforms = st.multiselect(
-                    "Preferred Learning Platforms:",
-                    ["youtube", "coursera", "udemy", "edx", "khan_academy", "codecademy"]
-                )
-                
-                content_types = st.multiselect(
-                    "Preferred Content Types:",
-                    ["video", "text", "interactive", "project_based", "quiz"]
-                )
-                
-                difficulty_preference = st.selectbox(
-                    "Difficulty Preference:",
-                    ["beginner", "intermediate", "advanced", "mixed"]
-                )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                submitted = st.form_submit_button("Save Profile", type="primary")
-            with col2:
-                skip = st.form_submit_button("Skip for Now")
-            
-            if submitted or skip:
-                if submitted and career_goals:
-                    # Update user profile with preferences
-                    preferences = {
-                        "career_goals": career_goals,
-                        "learning_preferences": {
-                            "learning_style": learning_style,
-                            "time_commitment": time_commitment,
-                            "budget_preference": budget_preference,
-                            "preferred_platforms": preferred_platforms,
-                            "content_types": content_types,
-                            "difficulty_preference": difficulty_preference
-                        }
-                    }
-                    
-                    # Store preferences in session state
-                    st.session_state.user_preferences = preferences
-                    st.success("✅ Profile saved successfully!")
-                
-                st.session_state.show_profile_setup = False
-                st.rerun()
+    """Show enhanced profile setup wizard for new users"""
+    if session_manager.get_ui_state("show_profile_setup", False):
+        from streamlit_user_profile_components import render_profile_setup_wizard
+        render_profile_setup_wizard(api, session_manager)
 
 def main_dashboard():
-    """Main dashboard view"""
-    if st.session_state.user_id is None:
-        st.markdown('<h1 class="main-header">🎓 Welcome to EdAgent</h1>', unsafe_allow_html=True)
-        st.markdown("""
-        ### Your AI-Powered Career Coach
-        
-        EdAgent helps you:
-        - 🎯 Assess your current skills
-        - 📚 Create personalized learning paths
-        - 💼 Get career coaching advice
-        - 🔍 Find the best educational resources
-        
-        **Please login or register to get started!**
-        
-        ### New to EdAgent?
-        Create an account with your email and password to:
-        - Save your progress across sessions
-        - Get personalized recommendations
-        - Track your learning journey
-        - Access all premium features
-        """)
+    """Enhanced main dashboard view with responsive design and accessibility"""
+    
+    # Add main content anchor for skip links
+    st.markdown('<div id="main-content"></div>', unsafe_allow_html=True)
+    
+    # Check authentication status
+    if not session_manager.is_authenticated():
+        with EnhancedCard(title="Welcome to EdAgent", icon="🎓", elevated=True):
+            st.markdown("""
+            ### Your AI-Powered Career Coach
+            
+            EdAgent helps you:
+            - 🎯 Assess your current skills
+            - 📚 Create personalized learning paths
+            - 💼 Get career coaching advice
+            - 🔍 Find the best educational resources
+            
+            **Please login or register to get started!**
+            """)
+            
+            with ResponsiveColumns(2) as cols:
+                with cols[0]:
+                    st.markdown("""
+                    ### New to EdAgent?
+                    Create an account with your email and password to:
+                    - Save your progress across sessions
+                    - Get personalized recommendations
+                    - Track your learning journey
+                    - Access all premium features
+                    """)
+                
+                with cols[1]:
+                    st.markdown("""
+                    ### Returning User?
+                    Log in to continue your learning journey and access:
+                    - Your conversation history
+                    - Saved learning paths
+                    - Assessment results
+                    - Personal analytics
+                    """)
         return
     
-    # Welcome message for authenticated users
-    welcome_name = st.session_state.user_name or st.session_state.user_email.split('@')[0] if st.session_state.user_email else "there"
+    # Get current user info
+    user_info = session_manager.get_current_user()
+    welcome_name = user_info.name or user_info.email.split('@')[0] if user_info else "there"
+    
+    # Enhanced welcome header with responsive design
     st.markdown(f'<h1 class="main-header">🎓 Welcome back, {welcome_name}!</h1>', unsafe_allow_html=True)
     
     # Show profile setup prompt for new users
-    if not st.session_state.get("user_preferences"):
-        st.info("💡 **Tip:** Complete your profile setup to get personalized recommendations!")
-        if st.button("Set Up Profile", key="setup_profile_btn"):
-            st.session_state.show_profile_setup = True
-            st.rerun()
+    user_preferences = session_manager.get_user_preferences()
+    if not user_preferences:
+        with EnhancedCard(title="Complete Your Profile", icon="💡", compact=True):
+            st.info("Complete your profile setup to get personalized recommendations!")
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if make_accessible_button("Set Up Profile", key="setup_profile_btn"):
+                    session_manager.set_ui_state("show_profile_setup", True)
+                    announce_to_screen_reader("Profile setup started", "assertive")
+                    st.rerun()
     
-    st.markdown('<h1 class="main-header">🎓 EdAgent Dashboard</h1>', unsafe_allow_html=True)
+    # Enhanced navigation with breadcrumbs
+    render_enhanced_breadcrumb()
     
-    # Main tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "💬 Chat", "📊 Assessments", "🛤️ Learning Paths", 
-        "👤 Profile", "🔒 Privacy", "📈 Analytics", "🎤 Interview Prep", "📄 Resume Help"
-    ])
+    # Create enhanced navigation items
+    nav_items = [
+        create_navigation_item("chat", "Chat", "💬", description="AI-powered conversations"),
+        create_navigation_item("assessments", "Assessments", "📊", description="Skill evaluations"),
+        create_navigation_item("learning_paths", "Learning Paths", "🛤️", description="Personalized learning"),
+        create_navigation_item("profile", "Profile", "👤", description="User settings"),
+        create_navigation_item("privacy", "Privacy", "🔒", description="Data controls"),
+        create_navigation_item("analytics", "Analytics", "📈", description="Progress tracking"),
+        create_navigation_item("interview_prep", "Interview Prep", "🎤", description="Interview practice"),
+        create_navigation_item("resume_help", "Resume Help", "📄", description="Resume optimization")
+    ]
     
-    with tab1:
-        show_chat_interface()
+    # Get current tab from session state or default to chat
+    current_tab = st.session_state.get("current_tab", "chat")
     
-    with tab2:
-        show_assessments()
+    # Render enhanced tabs with accessibility
+    st.markdown('<div id="navigation"></div>', unsafe_allow_html=True)
     
-    with tab3:
-        show_learning_paths()
+    # Use Streamlit's native tabs but with enhanced styling
+    tab_labels = [f"{item.icon} {item.label}" for item in nav_items]
+    tabs = st.tabs(tab_labels)
     
-    with tab4:
-        show_user_profile()
+    # Map tabs to functions
+    tab_functions = [
+        show_enhanced_chat_interface,
+        show_enhanced_assessments,
+        show_enhanced_learning_paths,
+        show_enhanced_user_profile,
+        show_enhanced_privacy_controls,
+        show_enhanced_analytics,
+        show_enhanced_interview_prep,
+        show_enhanced_resume_help
+    ]
     
-    with tab5:
-        show_privacy_controls()
+    # Render tab content with enhanced components
+    for i, (tab, func) in enumerate(zip(tabs, tab_functions)):
+        with tab:
+            # Set current navigation item
+            set_current_navigation_item(nav_items[i].key)
+            
+            # Add loading animation
+            with st.container():
+                st.markdown('<div class="nav-content fade-enter-active">', unsafe_allow_html=True)
+                func()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+def show_enhanced_chat_interface():
+    """Enhanced chat interface with responsive design and accessibility"""
     
-    with tab6:
-        show_analytics()
-    
-    with tab7:
-        render_interview_prep_widget()
-    
-    with tab8:
-        render_resume_analyzer()
+    with EnhancedCard(title="Chat with EdAgent", icon="💬"):
+        # Check authentication
+        if not session_manager.is_authenticated():
+            st.warning("🔐 Please log in to use the chat feature.")
+            return
+        
+        # Import enhanced error handling components
+        from streamlit_error_handler import error_context
+        from streamlit_loading_components import show_loading, LoadingStyle
+        from streamlit_connectivity_monitor import require_online_connection
+        
+        # Check connectivity for chat feature
+        if not require_online_connection("chat"):
+            return
+        
+        user_info = session_manager.get_current_user()
+        
+        # Load conversation history with enhanced error handling
+        if not st.session_state.conversation_loaded:
+            with show_loading("load_conversation", "Loading conversation history...", LoadingStyle.SPINNER):
+                try:
+                    history = asyncio.run(api.get_conversation_history(user_info.user_id, limit=50))
+                    if history:
+                        # Convert API history to chat messages format
+                        st.session_state.chat_messages = []
+                        for msg in history:
+                            st.session_state.chat_messages.append({
+                                "role": msg.get("role", "assistant"),
+                                "content": msg.get("content", ""),
+                                "timestamp": safe_parse_datetime(msg.get("timestamp")) or datetime.now(),
+                                "metadata": msg.get("metadata", {})
+                            })
+                        st.success(f"✅ Loaded {len(history)} previous messages")
+                        announce_to_screen_reader(f"Loaded {len(history)} previous messages", "polite")
+                    else:
+                        # Initialize with welcome message if no history
+                        st.session_state.chat_messages = [{
+                            "role": "assistant",
+                            "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                            "timestamp": datetime.now(),
+                            "metadata": {}
+                        }]
+                    st.session_state.conversation_loaded = True
+                except Exception as e:
+                    # Enhanced error handling will show user-friendly message
+                    # Fallback to empty conversation
+                    st.session_state.chat_messages = [{
+                        "role": "assistant",
+                        "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                        "timestamp": datetime.now(),
+                        "metadata": {}
+                    }]
+                    st.session_state.conversation_loaded = True
+        
+        # Enhanced chat controls with responsive design
+        with ResponsiveColumns([2, 1, 1]) as cols:
+            with cols[0]:
+                # Connection status indicator
+                status_colors = {
+                    "connected": "🟢",
+                    "connecting": "🟡", 
+                    "disconnected": "🔴",
+                    "error": "🔴"
+                }
+                status_text = {
+                    "connected": "Real-time chat active",
+                    "connecting": "Connecting...",
+                    "disconnected": "Using standard chat",
+                    "error": "Connection failed"
+                }
+                
+                st.caption(f"{status_colors.get(st.session_state.ws_connection_status, '🔴')} {status_text.get(st.session_state.ws_connection_status, 'Unknown')}")
+            
+            with cols[1]:
+                if make_accessible_button("🔗 Connect WebSocket", key="connect_ws"):
+                    st.session_state.ws_connection_status = "connecting"
+                    try:
+                        if connect_websocket(user_info.user_id, session_manager.get_auth_token()):
+                            st.session_state.ws_connection_status = "connected"
+                            st.success("🔗 Connected to real-time chat!")
+                            announce_to_screen_reader("Connected to real-time chat", "assertive")
+                        else:
+                            st.session_state.ws_connection_status = "error"
+                            st.error("Failed to connect WebSocket")
+                    except Exception as e:
+                        st.session_state.ws_connection_status = "error"
+                        st.error(f"WebSocket connection error: {str(e)}")
+                    st.rerun()
+            
+            with cols[2]:
+                if make_accessible_button("🗑️ Clear History", key="clear_history"):
+                    if st.session_state.get("confirm_clear", False):
+                        with show_loading("clear_history", "Clearing conversation history...", LoadingStyle.SPINNER):
+                            try:
+                                success = asyncio.run(api.clear_conversation_history(user_info.user_id))
+                                if success:
+                                    st.session_state.chat_messages = [{
+                                        "role": "assistant",
+                                        "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                                        "timestamp": datetime.now(),
+                                        "metadata": {}
+                                    }]
+                                    st.success("✅ Conversation history cleared")
+                                    announce_to_screen_reader("Conversation history cleared", "assertive")
+                                else:
+                                    st.error("Failed to clear conversation history")
+                            except Exception as e:
+                                st.error(f"Error clearing history: {str(e)}")
+                        st.session_state.confirm_clear = False
+                        st.rerun()
+                    else:
+                        st.session_state.confirm_clear = True
+                        st.warning("⚠️ Click again to confirm clearing all conversation history")
+                        st.rerun()
+        
+        # Enhanced chat display with accessibility
+        render_enhanced_chat_messages()
+        
+        # Enhanced chat input with validation
+        render_enhanced_chat_input(user_info)
+        
+        # Enhanced quick actions with responsive grid
+        render_enhanced_quick_actions()
 
 def show_chat_interface():
-    """Chat interface with WebSocket support"""
+    """Enhanced chat interface with comprehensive error handling and loading states"""
     st.header("💬 Chat with EdAgent")
     
-    # Initialize WebSocket if enabled and user is authenticated
-    if is_feature_enabled("websocket_chat") and st.session_state.user_id and st.session_state.access_token:
-        if "ws_connected" not in st.session_state:
-            st.session_state.ws_connected = False
+    # Import enhanced error handling components
+    from streamlit_error_handler import error_context
+    from streamlit_loading_components import show_loading, LoadingStyle
+    from streamlit_connectivity_monitor import require_online_connection
+    
+    # Check authentication
+    if not session_manager.is_authenticated():
+        st.warning("🔐 Please log in to use the chat feature.")
+        return
+    
+    # Check connectivity for chat feature
+    if not require_online_connection("chat"):
+        return
+    
+    user_info = session_manager.get_current_user()
+    
+    # Load conversation history with enhanced error handling
+    if not st.session_state.conversation_loaded:
+        with error_context("load_conversation_history", loading_message="Loading conversation history..."):
+            try:
+                history = asyncio.run(api.get_conversation_history(user_info.user_id, limit=50))
+                if history:
+                    # Convert API history to chat messages format
+                    st.session_state.chat_messages = []
+                    for msg in history:
+                        st.session_state.chat_messages.append({
+                            "role": msg.get("role", "assistant"),
+                            "content": msg.get("content", ""),
+                            "timestamp": safe_parse_datetime(msg.get("timestamp")) or datetime.now(),
+                            "metadata": msg.get("metadata", {})
+                        })
+                    st.success(f"✅ Loaded {len(history)} previous messages")
+                else:
+                    # Initialize with welcome message if no history
+                    st.session_state.chat_messages = [{
+                        "role": "assistant",
+                        "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                        "timestamp": datetime.now(),
+                        "metadata": {}
+                    }]
+                st.session_state.conversation_loaded = True
+            except Exception as e:
+                # Enhanced error handling will show user-friendly message
+                # Fallback to empty conversation
+                st.session_state.chat_messages = [{
+                    "role": "assistant",
+                    "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                    "timestamp": datetime.now(),
+                    "metadata": {}
+                }]
+                st.session_state.conversation_loaded = True
+    
+    # WebSocket connection management
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        # Connection status indicator
+        status_colors = {
+            "connected": "🟢",
+            "connecting": "🟡", 
+            "disconnected": "🔴",
+            "error": "🔴"
+        }
+        status_text = {
+            "connected": "Real-time chat active",
+            "connecting": "Connecting...",
+            "disconnected": "Using standard chat",
+            "error": "Connection failed"
+        }
         
-        if not st.session_state.ws_connected:
-            if connect_websocket(st.session_state.user_id, st.session_state.access_token):
-                st.session_state.ws_connected = True
-                st.success("🔗 Connected to real-time chat!")
+        st.caption(f"{status_colors.get(st.session_state.ws_connection_status, '🔴')} {status_text.get(st.session_state.ws_connection_status, 'Unknown')}")
     
-    # Initialize empty chat if no messages exist
-    if not st.session_state.chat_messages:
-        st.session_state.chat_messages = [{
-            "role": "assistant",
-            "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
-            "timestamp": datetime.now()
-        }]
+    with col2:
+        if st.button("🔗 Connect WebSocket", key="connect_ws"):
+            st.session_state.ws_connection_status = "connecting"
+            try:
+                if connect_websocket(user_info.user_id, session_manager.get_auth_token()):
+                    st.session_state.ws_connection_status = "connected"
+                    st.success("🔗 Connected to real-time chat!")
+                else:
+                    st.session_state.ws_connection_status = "error"
+                    st.error("Failed to connect WebSocket")
+            except Exception as e:
+                st.session_state.ws_connection_status = "error"
+                st.error(f"WebSocket connection error: {str(e)}")
+            st.rerun()
     
-    # Chat container with custom styling
-    with st.container():
+    with col3:
+        if st.button("🗑️ Clear History", key="clear_history"):
+            if st.session_state.get("confirm_clear", False):
+                try:
+                    success = asyncio.run(api.clear_conversation_history(user_info.user_id))
+                    if success:
+                        st.session_state.chat_messages = [{
+                            "role": "assistant",
+                            "content": "Hello! I'm EdAgent, your AI career coach. How can I help you today?",
+                            "timestamp": datetime.now(),
+                            "metadata": {}
+                        }]
+                        st.success("✅ Conversation history cleared")
+                    else:
+                        st.error("Failed to clear conversation history")
+                except Exception as e:
+                    st.error(f"Error clearing history: {str(e)}")
+                st.session_state.confirm_clear = False
+                st.rerun()
+            else:
+                st.session_state.confirm_clear = True
+                st.warning("⚠️ Click again to confirm clearing all conversation history")
+                st.rerun()
+    
+    # Chat container with enhanced styling and pagination
+    chat_container = st.container()
+    
+    with chat_container:
+        # Pagination controls for large conversation histories
+        total_messages = len(st.session_state.chat_messages)
+        messages_per_page = 20
+        total_pages = max(1, (total_messages + messages_per_page - 1) // messages_per_page)
+        
+        if total_pages > 1:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col1:
+                if st.button("⬅️ Previous", disabled=st.session_state.conversation_page == 0):
+                    st.session_state.conversation_page = max(0, st.session_state.conversation_page - 1)
+                    st.rerun()
+            
+            with col2:
+                st.write(f"Page {st.session_state.conversation_page + 1} of {total_pages}")
+            
+            with col3:
+                if st.button("Next ➡️", disabled=st.session_state.conversation_page >= total_pages - 1):
+                    st.session_state.conversation_page = min(total_pages - 1, st.session_state.conversation_page + 1)
+                    st.rerun()
+        
+        # Calculate message range for current page
+        start_idx = st.session_state.conversation_page * messages_per_page
+        end_idx = min(start_idx + messages_per_page, total_messages)
+        
+        # Display chat messages with enhanced formatting
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
         
-        # Display chat messages
-        for i, msg in enumerate(st.session_state.chat_messages):
+        for i in range(start_idx, end_idx):
+            msg = st.session_state.chat_messages[i]
+            
+            # Enhanced message display with metadata
             if msg["role"] == "user":
-                message(msg["content"], is_user=True, key=f"user_{i}")
+                with st.chat_message("user"):
+                    st.write(msg["content"])
+                    st.caption(f"🕒 {msg['timestamp'].strftime('%H:%M:%S')}")
             else:
-                message(msg["content"], is_user=False, key=f"bot_{i}")
+                with st.chat_message("assistant"):
+                    st.write(msg["content"])
+                    
+                    # Display content recommendations if available
+                    metadata = msg.get("metadata", {})
+                    if metadata.get("content_recommendations"):
+                        with st.expander("📚 Recommended Resources"):
+                            for rec in metadata["content_recommendations"][:3]:  # Show top 3
+                                st.write(f"• **{rec.get('title', 'Resource')}** - {rec.get('description', 'No description')}")
+                                if rec.get('url'):
+                                    st.markdown(f"  [View Resource]({rec['url']})")
+                    
+                    # Display follow-up questions if available
+                    if metadata.get("follow_up_questions"):
+                        st.write("**Suggested follow-up questions:**")
+                        for j, question in enumerate(metadata["follow_up_questions"][:3]):
+                            if st.button(f"💭 {question}", key=f"followup_{i}_{j}"):
+                                # Add follow-up question as user message
+                                st.session_state.chat_messages.append({
+                                    "role": "user",
+                                    "content": question,
+                                    "timestamp": datetime.now(),
+                                    "metadata": {"type": "follow_up"}
+                                })
+                                st.rerun()
+                    
+                    # Display suggested actions if available
+                    if metadata.get("suggested_actions"):
+                        st.write("**Suggested actions:**")
+                        for action in metadata["suggested_actions"][:2]:
+                            st.write(f"• {action}")
+                    
+                    st.caption(f"🕒 {msg['timestamp'].strftime('%H:%M:%S')}")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Chat input
+    # Enhanced chat input with loading states
     user_input = st.chat_input("Type your message here...")
     
     if user_input:
-        # Add user message
-        st.session_state.chat_messages.append({
+        # Add user message immediately
+        user_message = {
             "role": "user",
             "content": user_input,
-            "timestamp": datetime.now()
-        })
+            "timestamp": datetime.now(),
+            "metadata": {}
+        }
+        st.session_state.chat_messages.append(user_message)
         
-        # Get AI response
-        with st.spinner("EdAgent is thinking..."):
-            if st.session_state.user_id:
-                # Try to get real AI response from API
-                chat_response = api.send_chat_message(st.session_state.user_id, user_input)
-                response_content = chat_response.get("message", "I'm sorry, I couldn't process your message right now.")
-            else:
-                # For non-authenticated users, provide a helpful response
-                response_content = "I'd be happy to help! However, to provide personalized assistance, please login or register first. I can help you with career planning, skill assessments, learning paths, and more once you're authenticated."
-            
-            # Add AI response
-            st.session_state.chat_messages.append({
-                "role": "assistant", 
-                "content": response_content,
-                "timestamp": datetime.now()
-            })
+        # Enhanced message sending with comprehensive error handling
+        with error_context("send_chat_message", loading_message="EdAgent is thinking..."):
+            try:
+                # Try WebSocket first if connected
+                if st.session_state.ws_connection_status == "connected":
+                    try:
+                        success = send_websocket_message(user_input)
+                        if success:
+                            # Wait for WebSocket response (simplified)
+                            response = get_websocket_response()
+                            if response:
+                                response_content = response.get("content", "I received your message via WebSocket!")
+                                response_metadata = response.get("metadata", {})
+                            else:
+                                # Fallback to HTTP API with enhanced error handling
+                                chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                                response_content = chat_response.message
+                                response_metadata = {
+                                    "content_recommendations": chat_response.content_recommendations,
+                                    "follow_up_questions": chat_response.follow_up_questions,
+                                    "suggested_actions": chat_response.suggested_actions,
+                                    "confidence_score": chat_response.confidence_score
+                                }
+                        else:
+                            raise Exception("WebSocket send failed")
+                    except Exception as ws_error:
+                        st.warning(f"WebSocket failed, using HTTP API: {str(ws_error)}")
+                        st.session_state.ws_connection_status = "error"
+                        # Fallback to HTTP API with enhanced error handling
+                        chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                        response_content = chat_response.message
+                        response_metadata = {
+                            "content_recommendations": chat_response.content_recommendations,
+                            "follow_up_questions": chat_response.follow_up_questions,
+                            "suggested_actions": chat_response.suggested_actions,
+                            "confidence_score": chat_response.confidence_score
+                        }
+                else:
+                    # Use HTTP API with enhanced error handling
+                    chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                    response_content = chat_response.message
+                    response_metadata = {
+                        "content_recommendations": chat_response.content_recommendations,
+                        "follow_up_questions": chat_response.follow_up_questions,
+                        "suggested_actions": chat_response.suggested_actions,
+                        "confidence_score": chat_response.confidence_score
+                    }
+                
+                # Add AI response
+                ai_message = {
+                    "role": "assistant",
+                    "content": response_content,
+                    "timestamp": datetime.now(),
+                    "metadata": response_metadata
+                }
+                st.session_state.chat_messages.append(ai_message)
+                
+            except Exception as e:
+                # Enhanced error handling will display user-friendly messages
+                # Add fallback message to chat
+                error_message = {
+                    "role": "assistant",
+                    "content": "I'm sorry, I'm having trouble connecting right now. Please try again later.",
+                    "timestamp": datetime.now(),
+                    "metadata": {"error": True}
+                }
+                st.session_state.chat_messages.append(error_message)
         
         st.rerun()
     
-    # Quick action buttons
+    # Enhanced quick action buttons with context
     st.subheader("Quick Actions")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("🎯 Start Assessment"):
-            add_chat_message("assistant", "Let's start a skill assessment! What area would you like to assess?")
+        if st.button("🎯 Start Assessment", key="quick_assessment_btn"):
+            add_enhanced_chat_message("assistant", 
+                "Let's start a skill assessment! What area would you like to assess?",
+                metadata={
+                    "suggested_actions": ["Choose from: Python, JavaScript, Data Science, Machine Learning"],
+                    "follow_up_questions": ["What's your current experience level?", "Any specific skills you want to focus on?"]
+                })
             st.rerun()
     
     with col2:
-        if st.button("📚 Create Learning Path"):
-            add_chat_message("assistant", "I'll help you create a learning path! What's your career goal?")
+        if st.button("📚 Create Learning Path", key="quick_learning_btn"):
+            add_enhanced_chat_message("assistant", 
+                "I'll help you create a personalized learning path! What's your career goal?",
+                metadata={
+                    "suggested_actions": ["Be specific about your target role", "Mention your timeline"],
+                    "follow_up_questions": ["What's your current skill level?", "How much time can you dedicate per week?"]
+                })
             st.rerun()
     
     with col3:
-        if st.button("💼 Resume Help"):
-            add_chat_message("assistant", "I can help improve your resume! Please share your current resume or describe your experience.")
+        if st.button("💼 Resume Help", key="quick_resume_btn"):
+            add_enhanced_chat_message("assistant", 
+                "I can help improve your resume! Please share your current resume or describe your experience.",
+                metadata={
+                    "suggested_actions": ["Upload your resume file", "Describe your target role"],
+                    "follow_up_questions": ["What industry are you targeting?", "Any specific concerns about your resume?"]
+                })
             st.rerun()
     
     with col4:
-        if st.button("🎤 Interview Prep"):
-            add_chat_message("assistant", "Let's prepare for your interviews! What type of role are you interviewing for?")
+        if st.button("🎤 Interview Prep", key="quick_interview_btn"):
+            add_enhanced_chat_message("assistant", 
+                "Let's prepare for your interviews! What type of role are you interviewing for?",
+                metadata={
+                    "suggested_actions": ["Specify the role and company", "Mention interview format (technical, behavioral, etc.)"],
+                    "follow_up_questions": ["When is your interview?", "What are you most nervous about?"]
+                })
             st.rerun()
+    
+    # Conversation context management
+    st.divider()
+    with st.expander("🔧 Conversation Settings"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📥 Export Conversation", key="export_conv"):
+                try:
+                    # Create exportable conversation data
+                    export_data = {
+                        "user_id": user_info.user_id,
+                        "export_date": datetime.now().isoformat(),
+                        "messages": st.session_state.chat_messages
+                    }
+                    
+                    # Convert to JSON for download
+                    json_str = json.dumps(export_data, indent=2, default=str)
+                    st.download_button(
+                        label="💾 Download JSON",
+                        data=json_str,
+                        file_name=f"edagent_conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json"
+                    )
+                except Exception as e:
+                    st.error(f"Export failed: {str(e)}")
+        
+        with col2:
+            if st.button("🔄 Refresh History", key="refresh_history"):
+                st.session_state.conversation_loaded = False
+                st.rerun()
+
+
+def add_enhanced_chat_message(role: str, content: str, metadata: Dict[str, Any] = None):
+    """Add an enhanced message to the chat history with metadata"""
+    if metadata is None:
+        metadata = {}
+    
+    st.session_state.chat_messages.append({
+        "role": role,
+        "content": content,
+        "timestamp": datetime.now(),
+        "metadata": metadata
+    })
 
 
 
@@ -629,514 +1032,33 @@ def add_chat_message(role: str, content: str):
     })
 
 def show_assessments():
-    """Skill assessments interface"""
-    st.header("📊 Skill Assessments")
+    """Comprehensive skill assessments interface with full API integration"""
+    from streamlit_assessment_components import render_assessment_dashboard
     
-    # Use the enhanced assessment widget
-    render_skill_assessment_widget(api, st.session_state.user_id or "demo_user")
-    
-    st.divider()
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Quick Assessment")
-        
-        skill_area = st.selectbox(
-            "Choose skill area:",
-            ["Python Programming", "Web Development", "Data Science", 
-             "Machine Learning", "Digital Marketing", "Project Management"]
-        )
-        
-        if st.button("Start Quick Assessment", key="quick_assessment"):
-            if st.session_state.user_id:
-                result = api.start_assessment(st.session_state.user_id, skill_area.lower())
-                if result:
-                    st.session_state.current_assessment = result
-                    st.success(f"✅ Started {skill_area} assessment!")
-                else:
-                    st.error("Failed to start assessment")
-            else:
-                st.info("Please login to start an assessment")
-    
-    with col2:
-        st.subheader("Assessment History")
-        
-        # Show assessment history from API
-        if st.session_state.user_id:
-            # TODO: Implement API call to get user assessments
-            st.info("Assessment history will be loaded from your profile.")
-        else:
-            st.info("Please login to view your assessment history.")
-            
-        # Show placeholder assessment data for demonstration
-        assessment_data = {
-            "Assessment": ["Python Programming", "Web Development", "Data Science"],
-            "Date": ["2024-01-15", "2024-01-10", "2024-01-05"],
-            "Score": [85, 72, 90],
-            "Level": ["Intermediate", "Beginner", "Advanced"]
-        }
-        
-        df = pd.DataFrame(assessment_data)
-        st.dataframe(df, use_container_width=True)
-        
-        # Visualization
-        fig = px.bar(df, x="Assessment", y="Score", color="Level",
-                    title="Assessment Scores", color_discrete_map={
-                        "Beginner": "#ff7f0e",
-                        "Intermediate": "#2ca02c", 
-                        "Advanced": "#1f77b4"
-                    })
-        st.plotly_chart(fig, use_container_width=True)
+    # Render the complete assessment dashboard
+    render_assessment_dashboard(api, session_manager)
 
 def show_learning_paths():
-    """Learning paths interface"""
-    st.header("🛤️ Learning Paths")
+    """Enhanced learning paths interface with comprehensive management system"""
+    # Import the new learning path management system
+    from streamlit_learning_path_components import render_learning_path_management_system
     
-    # Use the enhanced learning path builder
-    render_learning_path_builder(api, st.session_state.user_id or "demo_user")
-    
-    st.divider()
-    
-    # Career roadmap visualization
-    render_career_roadmap()
-    
-    st.divider()
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Quick Path Creation")
-        
-        goal = st.text_area(
-            "Describe your learning goal:",
-            placeholder="e.g., I want to become a full-stack web developer"
-        )
-        
-        if st.button("Create Learning Path", key="create_path"):
-            if goal:
-                if st.session_state.user_id:
-                    result = api.create_learning_path(st.session_state.user_id, goal)
-                    if result:
-                        st.success("✅ Learning path created!")
-                        # Refresh learning paths
-                        paths_data = api.get_user_learning_paths(st.session_state.user_id)
-                        if paths_data:
-                            st.session_state.learning_paths = paths_data.get("learning_paths", [])
-                    else:
-                        st.error("Failed to create learning path")
-                else:
-                    st.info("Please login to create a learning path")
-            else:
-                st.error("Please describe your learning goal")
-    
-    with col2:
-        st.subheader("Your Learning Paths")
-        
-        # Load learning paths from API
-        if st.session_state.user_id and not st.session_state.learning_paths:
-            paths_data = api.get_user_learning_paths(st.session_state.user_id)
-            if paths_data and "learning_paths" in paths_data:
-                st.session_state.learning_paths = paths_data["learning_paths"]
-        
-        if not st.session_state.learning_paths:
-            st.info("No learning paths yet. Create one to get started!")
-        else:
-            for i, path in enumerate(st.session_state.learning_paths):
-                with st.expander(f"📚 {path.get('title', f'Learning Path {i+1}')}"):
-                    st.write(f"**Goal:** {path.get('goal', 'Not specified')}")
-                    st.write(f"**Progress:** {path.get('progress', 0):.1%}")
-                    
-                    # Progress bar
-                    progress = path.get('progress', 0)
-                    st.progress(progress)
-                    
-                    # Milestones
-                    milestones = path.get('milestones', [])
-                    if milestones:
-                        st.write("**Milestones:**")
-                        for milestone in milestones[:3]:  # Show first 3
-                            status_icon = "✅" if milestone.get('status') == 'completed' else "🔄" if milestone.get('status') == 'in_progress' else "⏳"
-                            st.write(f"{status_icon} {milestone.get('title', 'Milestone')}")
-                            if milestone.get('description'):
-                                st.caption(milestone['description'])
-                    
-                    # Action buttons
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        if st.button(f"Continue Path", key=f"continue_{i}"):
-                            st.info("Continuing learning path...")
-                    with col_b:
-                        if st.button(f"View Details", key=f"details_{i}"):
-                            st.info("Showing detailed view...")
+    # Render the complete learning path management system
+    render_learning_path_management_system(api, session_manager)
 
 def show_user_profile():
-    """User profile management"""
-    st.header("👤 User Profile")
-    
-    # Load user profile from API if not already loaded
-    if st.session_state.user_id and not st.session_state.user_profile:
-        user_data = api.get_user(st.session_state.user_id)
-        if user_data and "user" in user_data:
-            st.session_state.user_profile = user_data["user"]
-    
-    if st.session_state.user_profile:
-        profile = st.session_state.user_profile
-        
-        # Progress dashboard - TODO: Implement real analytics
-        st.info("📊 Analytics dashboard will show your learning progress and achievements.")
-        st.divider()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Basic Information")
-            st.write(f"**Name:** {st.session_state.user_name or 'N/A'}")
-            st.write(f"**Email:** {st.session_state.user_email or 'N/A'}")
-            st.write(f"**User ID:** {profile.get('user_id', st.session_state.user_id)}")
-            st.write(f"**Member Since:** {profile.get('created_at', 'N/A')}")
-            st.write(f"**Last Active:** {profile.get('last_active', 'N/A')}")
-            
-            st.subheader("Career Goals")
-            goals = profile.get('career_goals', [])
-            if goals:
-                for i, goal in enumerate(goals):
-                    col_goal, col_edit = st.columns([4, 1])
-                    with col_goal:
-                        st.write(f"🎯 {goal}")
-                    with col_edit:
-                        if st.button("✏️", key=f"edit_goal_{i}"):
-                            st.info("Goal editing would be implemented here")
-            else:
-                st.info("No career goals set")
-            
-            # Add new goal
-            with st.expander("Add New Goal"):
-                new_goal = st.text_input("New career goal:")
-                if st.button("Add Goal") and new_goal:
-                    if 'career_goals' not in profile:
-                        profile['career_goals'] = []
-                    profile['career_goals'].append(new_goal)
-                    st.success("Goal added!")
-                    st.rerun()
-        
-        with col2:
-            st.subheader("Learning Preferences")
-            prefs = profile.get('learning_preferences', {})
-            if prefs:
-                st.write(f"**Learning Style:** {prefs.get('learning_style', 'N/A')}")
-                st.write(f"**Time Commitment:** {prefs.get('time_commitment', 'N/A')} hours/week")
-                st.write(f"**Budget:** {prefs.get('budget_preference', 'N/A')}")
-                
-                platforms = prefs.get('preferred_platforms', [])
-                if platforms:
-                    st.write(f"**Platforms:** {', '.join(platforms)}")
-                
-                content_types = prefs.get('content_types', [])
-                if content_types:
-                    st.write(f"**Content Types:** {', '.join(content_types)}")
-            else:
-                st.info("No preferences set")
-            
-            # Edit preferences button
-            if st.button("Edit Preferences"):
-                st.session_state.show_preferences_editor = True
-            
-            st.subheader("Current Skills")
-            skills = profile.get('current_skills', {})
-            if skills:
-                for skill_name, skill_data in skills.items():
-                    level = skill_data.get('level', 'Unknown')
-                    confidence = skill_data.get('confidence_score', 0)
-                    
-                    # Skill progress bar
-                    col_skill, col_conf = st.columns([2, 1])
-                    with col_skill:
-                        st.write(f"**{skill_name}:** {level}")
-                    with col_conf:
-                        st.progress(confidence)
-                        st.caption(f"{confidence:.1%}")
-            else:
-                st.info("No skills assessed yet")
-        
-        # Preferences editor
-        if st.session_state.get("show_preferences_editor", False):
-            st.divider()
-            st.subheader("✏️ Edit Learning Preferences")
-            
-            with st.form("preferences_form"):
-                current_prefs = profile.get('learning_preferences', {})
-                
-                learning_style = st.selectbox(
-                    "Learning Style:",
-                    ["visual", "auditory", "kinesthetic", "reading"],
-                    index=["visual", "auditory", "kinesthetic", "reading"].index(
-                        current_prefs.get('learning_style', 'visual')
-                    )
-                )
-                
-                time_commitment = st.selectbox(
-                    "Time Commitment:",
-                    ["1-5", "5-10", "10-20", "20+"],
-                    index=["1-5", "5-10", "10-20", "20+"].index(
-                        current_prefs.get('time_commitment', '5-10')
-                    )
-                )
-                
-                budget_preference = st.selectbox(
-                    "Budget Preference:",
-                    ["free", "low_cost", "moderate", "premium"],
-                    index=["free", "low_cost", "moderate", "premium"].index(
-                        current_prefs.get('budget_preference', 'moderate')
-                    )
-                )
-                
-                preferred_platforms = st.multiselect(
-                    "Preferred Platforms:",
-                    ["youtube", "coursera", "udemy", "edx", "khan_academy", "codecademy"],
-                    default=current_prefs.get('preferred_platforms', [])
-                )
-                
-                content_types = st.multiselect(
-                    "Content Types:",
-                    ["video", "text", "interactive", "project_based", "quiz"],
-                    default=current_prefs.get('content_types', [])
-                )
-                
-                col_save, col_cancel = st.columns(2)
-                
-                with col_save:
-                    if st.form_submit_button("Save Changes"):
-                        # Update preferences
-                        profile['learning_preferences'] = {
-                            'learning_style': learning_style,
-                            'time_commitment': time_commitment,
-                            'budget_preference': budget_preference,
-                            'preferred_platforms': preferred_platforms,
-                            'content_types': content_types
-                        }
-                        st.session_state.show_preferences_editor = False
-                        st.success("Preferences updated!")
-                        st.rerun()
-                
-                with col_cancel:
-                    if st.form_submit_button("Cancel"):
-                        st.session_state.show_preferences_editor = False
-                        st.rerun()
-    
-    else:
-        st.info("Profile information not available. Please login or register to view your profile.")
-        
-        if st.button("Create Profile"):
-            st.session_state.show_registration = True
-            st.rerun()
+    """Comprehensive user profile management using UserProfileManager"""
+    from streamlit_user_profile_components import render_user_profile_dashboard
+    render_user_profile_dashboard(api, session_manager)
 
 def show_privacy_controls():
-    """Privacy and data management"""
-    st.header("🔒 Privacy & Data Management")
-    
-    tab1, tab2, tab3 = st.tabs(["Settings", "Data Export", "Data Deletion"])
-    
-    with tab1:
-        st.subheader("Privacy Settings")
-        
-        # Get current settings
-        settings_data = api.get_privacy_settings(st.session_state.user_id)
-        settings = settings_data.get("settings", {}) if settings_data else {}
-        
-        with st.form("privacy_settings"):
-            allow_analytics = st.checkbox(
-                "Allow analytics data collection",
-                value=settings.get("allow_analytics", True)
-            )
-            
-            allow_personalization = st.checkbox(
-                "Allow personalization features",
-                value=settings.get("allow_personalization", True)
-            )
-            
-            allow_marketing = st.checkbox(
-                "Allow marketing communications",
-                value=settings.get("allow_marketing", False)
-            )
-            
-            auto_delete = st.checkbox(
-                "Auto-delete old conversations",
-                value=settings.get("auto_delete_conversations", False)
-            )
-            
-            retention_days = st.number_input(
-                "Conversation retention (days)",
-                min_value=30,
-                max_value=3650,
-                value=settings.get("conversation_retention_days", 365)
-            )
-            
-            if st.form_submit_button("Update Settings"):
-                st.success("✅ Privacy settings updated!")
-    
-    with tab2:
-        st.subheader("Export Your Data")
-        st.write("Download all your data in JSON format.")
-        
-        if st.button("Export Data", key="export_data"):
-            with st.spinner("Preparing your data export..."):
-                result = api.export_user_data(st.session_state.user_id)
-                if result:
-                    st.success("✅ Data export ready!")
-                    
-                    # Convert to JSON string for download
-                    json_str = json.dumps(result, indent=2)
-                    st.download_button(
-                        label="Download Export",
-                        data=json_str,
-                        file_name=f"edagent_export_{st.session_state.user_id}.json",
-                        mime="application/json"
-                    )
-                else:
-                    st.error("Failed to export data")
-    
-    with tab3:
-        st.subheader("Delete Your Data")
-        st.warning("⚠️ This action cannot be undone!")
-        
-        data_types = st.multiselect(
-            "Select data types to delete:",
-            ["conversations", "assessments", "learning_paths", "profile", "all"]
-        )
-        
-        confirm = st.checkbox("I understand this action cannot be undone")
-        
-        if st.button("Delete Selected Data", key="delete_data", type="secondary"):
-            if confirm and data_types:
-                st.error("Data deletion functionality would be implemented here")
-            else:
-                st.error("Please confirm and select data types to delete")
+    """Enhanced privacy and data management using PrivacyComponents"""
+    privacy_components.render_privacy_dashboard()
 
 def show_analytics():
-    """Analytics and progress tracking"""
-    st.header("📈 Your Learning Analytics")
-    
-    # Analytics dashboard - real implementation needed
-    if st.session_state.user_id:
-        st.info("📊 Your learning analytics will be displayed here once you start using the platform.")
-        
-        # TODO: Implement real analytics API calls
-        # analytics_data = api.get_user_analytics(st.session_state.user_id)
-        # render_progress_dashboard(analytics_data)
-    else:
-        st.info("Please login to view your analytics.")
-        
-    st.divider()
-        
-    # TODO: Implement real recommendations API calls  
-    # recommendations = api.get_recommendations(st.session_state.user_id)
-    # render_resource_recommendations(recommendations)
-    
-    # Show sample analytics for demonstration
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Assessments", "12", "+3")
-    
-    with col2:
-        st.metric("Learning Paths", "5", "+1")
-    
-    with col3:
-        st.metric("Skills Improved", "8", "+2")
-    
-    with col4:
-        st.metric("Study Hours", "45", "+12")
-    
-    # Charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Progress over time
-        dates = pd.date_range(start='2024-01-01', end='2024-01-30', freq='D')
-        progress_data = pd.DataFrame({
-            'Date': dates,
-            'Progress': [i + (i % 7) * 2 for i in range(len(dates))]
-        })
-        
-        fig = px.line(progress_data, x='Date', y='Progress', 
-                     title='Learning Progress Over Time',
-                     color_discrete_sequence=['#1f77b4'])
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Skill distribution
-        skills_data = {
-            'Skill': ['Python', 'Web Dev', 'Data Science', 'ML', 'SQL'],
-            'Level': [85, 70, 60, 45, 80]
-        }
-        
-        fig = px.bar(skills_data, x='Skill', y='Level', 
-                    title='Current Skill Levels',
-                    color='Level',
-                    color_continuous_scale='viridis')
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Activity heatmap
-    st.subheader("Activity Heatmap")
-    
-    # Generate mock activity data
-    import numpy as np
-    activity_data = np.random.randint(0, 10, size=(7, 24))
-    
-    fig = go.Figure(data=go.Heatmap(
-        z=activity_data,
-        x=[f"{i}:00" for i in range(24)],
-        y=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        colorscale='Blues',
-        hoverongaps=False
-    ))
-    
-    fig.update_layout(
-        title='Weekly Activity Pattern',
-        xaxis_title='Hour of Day',
-        yaxis_title='Day of Week',
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Additional analytics sections
-    st.divider()
-    
-    # Learning streaks and achievements
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("🔥 Learning Streaks")
-        
-        streak_data = {
-            "Current Streak": "7 days",
-            "Longest Streak": "23 days", 
-            "This Week": "5 days",
-            "This Month": "18 days"
-        }
-        
-        for label, value in streak_data.items():
-            st.metric(label, value)
-    
-    with col2:
-        st.subheader("🏆 Achievements")
-        
-        achievements = [
-            {"title": "First Assessment", "description": "Completed your first skill assessment", "earned": True},
-            {"title": "Learning Path Creator", "description": "Created your first learning path", "earned": True},
-            {"title": "Week Warrior", "description": "Studied for 7 consecutive days", "earned": True},
-            {"title": "Skill Master", "description": "Reached advanced level in a skill", "earned": False},
-            {"title": "Course Completer", "description": "Finished a complete learning path", "earned": False}
-        ]
-        
-        for achievement in achievements:
-            icon = "🏆" if achievement["earned"] else "🔒"
-            color = "normal" if achievement["earned"] else "secondary"
-            st.write(f"{icon} **{achievement['title']}**")
-            st.caption(achievement["description"])
-            st.divider()
+    """Analytics and progress tracking dashboard"""
+    from streamlit_analytics_components import render_analytics_dashboard
+    render_analytics_dashboard(api, session_manager)
 
 def main():
     """Main application entry point"""
@@ -1155,3 +1077,545 @@ def main():
 
 if __name__ == "__main__":
     main()
+def render_enhanced_chat_messages():
+    """Render chat messages with enhanced accessibility and responsive design"""
+    
+    # Chat container with enhanced styling and pagination
+    total_messages = len(st.session_state.chat_messages)
+    messages_per_page = 20
+    total_pages = max(1, (total_messages + messages_per_page - 1) // messages_per_page)
+    
+    if total_pages > 1:
+        with ResponsiveColumns([1, 2, 1]) as cols:
+            with cols[0]:
+                if make_accessible_button("⬅️ Previous", disabled=st.session_state.conversation_page == 0, key="prev_page"):
+                    st.session_state.conversation_page = max(0, st.session_state.conversation_page - 1)
+                    st.rerun()
+            
+            with cols[1]:
+                st.markdown(f"<div style='text-align: center; padding: 0.5rem;'>Page {st.session_state.conversation_page + 1} of {total_pages}</div>", unsafe_allow_html=True)
+            
+            with cols[2]:
+                if make_accessible_button("Next ➡️", disabled=st.session_state.conversation_page >= total_pages - 1, key="next_page"):
+                    st.session_state.conversation_page = min(total_pages - 1, st.session_state.conversation_page + 1)
+                    st.rerun()
+    
+    # Calculate message range for current page
+    start_idx = st.session_state.conversation_page * messages_per_page
+    end_idx = min(start_idx + messages_per_page, total_messages)
+    
+    # Display chat messages with enhanced formatting
+    st.markdown('<div class="chat-container" role="log" aria-label="Chat conversation">', unsafe_allow_html=True)
+    
+    for i in range(start_idx, end_idx):
+        msg = st.session_state.chat_messages[i]
+        
+        # Enhanced message display with metadata
+        if msg["role"] == "user":
+            with st.chat_message("user"):
+                st.write(msg["content"])
+                st.caption(f"🕒 {msg['timestamp'].strftime('%H:%M:%S')}")
+        else:
+            with st.chat_message("assistant"):
+                st.write(msg["content"])
+                
+                # Display content recommendations if available
+                metadata = msg.get("metadata", {})
+                if metadata.get("content_recommendations"):
+                    with st.expander("📚 Recommended Resources"):
+                        for rec in metadata["content_recommendations"][:3]:  # Show top 3
+                            with EnhancedCard(compact=True):
+                                st.write(f"**{rec.get('title', 'Resource')}**")
+                                st.write(rec.get('description', 'No description'))
+                                if rec.get('url'):
+                                    st.markdown(f"[View Resource]({rec['url']})")
+                
+                # Display follow-up questions if available
+                if metadata.get("follow_up_questions"):
+                    st.write("**Suggested follow-up questions:**")
+                    for j, question in enumerate(metadata["follow_up_questions"][:3]):
+                        if make_accessible_button(f"💭 {question}", key=f"followup_{i}_{j}"):
+                            # Add follow-up question as user message
+                            st.session_state.chat_messages.append({
+                                "role": "user",
+                                "content": question,
+                                "timestamp": datetime.now(),
+                                "metadata": {"type": "follow_up"}
+                            })
+                            announce_to_screen_reader(f"Selected follow-up question: {question}", "polite")
+                            st.rerun()
+                
+                # Display suggested actions if available
+                if metadata.get("suggested_actions"):
+                    st.write("**Suggested actions:**")
+                    for action in metadata["suggested_actions"][:2]:
+                        st.write(f"• {action}")
+                
+                st.caption(f"🕒 {msg['timestamp'].strftime('%H:%M:%S')}")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_enhanced_chat_input(user_info):
+    """Render enhanced chat input with validation and accessibility"""
+    
+    # Enhanced chat input with loading states
+    user_input = st.chat_input("Type your message here...", key="chat_input")
+    
+    if user_input:
+        # Validate input
+        if len(user_input.strip()) == 0:
+            st.error("Please enter a message")
+            return
+        
+        if len(user_input) > 2000:
+            st.error("Message is too long. Please keep it under 2000 characters.")
+            return
+        
+        # Add user message immediately
+        user_message = {
+            "role": "user",
+            "content": user_input,
+            "timestamp": datetime.now(),
+            "metadata": {}
+        }
+        st.session_state.chat_messages.append(user_message)
+        
+        # Enhanced message sending with comprehensive error handling
+        from streamlit_loading_components import show_loading, LoadingStyle
+        
+        with show_loading("send_message", "EdAgent is thinking...", LoadingStyle.SPINNER):
+            try:
+                # Try WebSocket first if connected
+                if st.session_state.ws_connection_status == "connected":
+                    try:
+                        success = send_websocket_message(user_input)
+                        if success:
+                            # Wait for WebSocket response (simplified)
+                            response = get_websocket_response()
+                            if response:
+                                response_content = response.get("content", "I received your message via WebSocket!")
+                                response_metadata = response.get("metadata", {})
+                            else:
+                                # Fallback to HTTP API
+                                chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                                response_content = chat_response.message
+                                response_metadata = {
+                                    "content_recommendations": chat_response.content_recommendations,
+                                    "follow_up_questions": chat_response.follow_up_questions,
+                                    "suggested_actions": chat_response.suggested_actions,
+                                    "confidence_score": chat_response.confidence_score
+                                }
+                        else:
+                            raise Exception("WebSocket send failed")
+                    except Exception as ws_error:
+                        st.warning(f"WebSocket failed, using HTTP API")
+                        st.session_state.ws_connection_status = "error"
+                        # Fallback to HTTP API
+                        chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                        response_content = chat_response.message
+                        response_metadata = {
+                            "content_recommendations": chat_response.content_recommendations,
+                            "follow_up_questions": chat_response.follow_up_questions,
+                            "suggested_actions": chat_response.suggested_actions,
+                            "confidence_score": chat_response.confidence_score
+                        }
+                else:
+                    # Use HTTP API
+                    chat_response = asyncio.run(api.send_message(user_info.user_id, user_input))
+                    response_content = chat_response.message
+                    response_metadata = {
+                        "content_recommendations": chat_response.content_recommendations,
+                        "follow_up_questions": chat_response.follow_up_questions,
+                        "suggested_actions": chat_response.suggested_actions,
+                        "confidence_score": chat_response.confidence_score
+                    }
+                
+                # Add AI response
+                ai_message = {
+                    "role": "assistant",
+                    "content": response_content,
+                    "timestamp": datetime.now(),
+                    "metadata": response_metadata
+                }
+                st.session_state.chat_messages.append(ai_message)
+                announce_to_screen_reader("EdAgent has responded", "polite")
+                
+            except Exception as e:
+                # Add fallback message to chat
+                error_message = {
+                    "role": "assistant",
+                    "content": "I'm sorry, I'm having trouble connecting right now. Please try again later.",
+                    "timestamp": datetime.now(),
+                    "metadata": {"error": True}
+                }
+                st.session_state.chat_messages.append(error_message)
+                announce_to_screen_reader("Error occurred while sending message", "assertive")
+        
+        st.rerun()
+
+
+def render_enhanced_quick_actions():
+    """Render enhanced quick action buttons with responsive grid"""
+    
+    st.subheader("Quick Actions")
+    
+    with ResponsiveColumns(4) as cols:
+        with cols[0]:
+            if make_accessible_button("🎯 Start Assessment", key="quick_assessment_btn"):
+                add_enhanced_chat_message("assistant", 
+                    "Let's start a skill assessment! What area would you like to assess?",
+                    metadata={
+                        "suggested_actions": ["Choose from: Python, JavaScript, Data Science, Machine Learning"],
+                        "follow_up_questions": ["What's your current experience level?", "Any specific skills you want to focus on?"]
+                    })
+                announce_to_screen_reader("Started skill assessment conversation", "polite")
+                st.rerun()
+        
+        with cols[1]:
+            if make_accessible_button("📚 Create Learning Path", key="quick_learning_btn"):
+                add_enhanced_chat_message("assistant", 
+                    "I'll help you create a personalized learning path! What's your career goal?",
+                    metadata={
+                        "suggested_actions": ["Be specific about your target role", "Mention your timeline"],
+                        "follow_up_questions": ["What's your current skill level?", "How much time can you dedicate per week?"]
+                    })
+                announce_to_screen_reader("Started learning path creation", "polite")
+                st.rerun()
+        
+        with cols[2]:
+            if make_accessible_button("💼 Resume Help", key="quick_resume_btn"):
+                add_enhanced_chat_message("assistant", 
+                    "I can help improve your resume! Please share your current resume or describe your experience.",
+                    metadata={
+                        "suggested_actions": ["Upload your resume file", "Describe your target role"],
+                        "follow_up_questions": ["What industry are you targeting?", "Any specific concerns about your resume?"]
+                    })
+                announce_to_screen_reader("Started resume help conversation", "polite")
+                st.rerun()
+        
+        with cols[3]:
+            if make_accessible_button("🎤 Interview Prep", key="quick_interview_btn"):
+                add_enhanced_chat_message("assistant", 
+                    "Let's prepare for your interviews! What type of role are you interviewing for?",
+                    metadata={
+                        "suggested_actions": ["Specify the role and company", "Mention interview format (technical, behavioral, etc.)"],
+                        "follow_up_questions": ["When is your interview?", "What are you most nervous about?"]
+                    })
+                announce_to_screen_reader("Started interview preparation", "polite")
+                st.rerun()
+
+
+def add_enhanced_chat_message(role: str, content: str, metadata: dict = None):
+    """Add a message to the chat with enhanced metadata"""
+    message = {
+        "role": role,
+        "content": content,
+        "timestamp": datetime.now(),
+        "metadata": metadata or {}
+    }
+    st.session_state.chat_messages.append(message)
+
+
+def show_enhanced_assessments():
+    """Enhanced assessments interface with interactive tables and responsive design"""
+    
+    with EnhancedCard(title="Skill Assessments", icon="📊"):
+        st.markdown("Track your skill development with comprehensive assessments.")
+        
+        # Mock assessment data for demonstration
+        assessment_data = pd.DataFrame({
+            'id': ['assess_1', 'assess_2', 'assess_3', 'assess_4'],
+            'skill_area': ['Python Programming', 'Data Science', 'Web Development', 'Machine Learning'],
+            'score': [0.85, 0.92, 0.78, 0.88],
+            'status': ['completed', 'completed', 'in_progress', 'completed'],
+            'completed_at': pd.date_range('2024-01-01', periods=4, freq='7D'),
+            'duration': ['25 min', '35 min', '20 min', '40 min']
+        })
+        
+        # Create enhanced assessment table
+        assessment_table = create_assessment_table(assessment_data, "assessments_table")
+        
+        # Render the table
+        table_result = assessment_table.render()
+        
+        # Show selected assessments
+        if table_result["selected_rows"]:
+            selected_data = assessment_table.get_selected_data()
+            
+            with EnhancedCard(title="Selected Assessments", compact=True):
+                st.write(f"**{len(selected_data)} assessments selected**")
+                
+                with ResponsiveColumns(3) as cols:
+                    with cols[0]:
+                        if make_accessible_button("📊 View Details", key="view_assessment_details"):
+                            st.info("Assessment details would be displayed here")
+                    
+                    with cols[1]:
+                        if make_accessible_button("🔄 Retake Assessment", key="retake_assessment"):
+                            st.info("Assessment retake would be initiated here")
+                    
+                    with cols[2]:
+                        if make_accessible_button("📈 Compare Results", key="compare_assessments"):
+                            st.info("Assessment comparison would be shown here")
+        
+        # Assessment creation section
+        st.divider()
+        
+        with EnhancedCard(title="Start New Assessment", icon="🎯"):
+            with EnhancedForm(title="Assessment Setup") as form:
+                skill_area = form.text_input(
+                    "Skill Area",
+                    "skill_area",
+                    placeholder="e.g., Python, JavaScript, Data Science",
+                    required=True,
+                    help_text="Enter the skill you want to assess"
+                )
+                
+                difficulty = st.selectbox(
+                    "Difficulty Level",
+                    ["Beginner", "Intermediate", "Advanced"],
+                    key="assessment_difficulty"
+                )
+                
+                time_limit = st.slider(
+                    "Time Limit (minutes)",
+                    min_value=10,
+                    max_value=60,
+                    value=30,
+                    key="assessment_time_limit"
+                )
+                
+                if form.submit_button("Start Assessment"):
+                    if form.is_valid():
+                        with show_loading("create_assessment", "Creating your assessment...", LoadingStyle.PROGRESS_BAR):
+                            # Simulate assessment creation
+                            time.sleep(2)
+                            st.success(f"✅ Assessment for {skill_area} created successfully!")
+                            announce_to_screen_reader(f"Assessment for {skill_area} started", "assertive")
+                    else:
+                        st.error("Please fix the errors above")
+
+
+def show_enhanced_learning_paths():
+    """Enhanced learning paths interface with interactive management"""
+    
+    with EnhancedCard(title="Learning Paths", icon="🛤️"):
+        st.markdown("Create and manage your personalized learning journeys.")
+        
+        # Mock learning path data
+        learning_path_data = pd.DataFrame({
+            'id': ['path_1', 'path_2', 'path_3'],
+            'title': ['Python Mastery', 'Data Science Fundamentals', 'Web Development Bootcamp'],
+            'progress': [0.75, 0.45, 0.20],
+            'difficulty': ['Intermediate', 'Beginner', 'Advanced'],
+            'estimated_hours': [40, 60, 80],
+            'created_at': pd.date_range('2024-01-01', periods=3, freq='10D'),
+            'status': ['active', 'active', 'paused']
+        })
+        
+        # Create enhanced learning path table
+        learning_path_table = create_learning_path_table(learning_path_data, "learning_paths_table")
+        
+        # Render the table
+        table_result = learning_path_table.render()
+        
+        # Learning path management actions
+        if table_result["selected_rows"]:
+            selected_data = learning_path_table.get_selected_data()
+            
+            with EnhancedCard(title="Path Management", compact=True):
+                with ResponsiveColumns(4) as cols:
+                    with cols[0]:
+                        if make_accessible_button("▶️ Continue", key="continue_path"):
+                            st.success("Continuing selected learning path...")
+                    
+                    with cols[1]:
+                        if make_accessible_button("⏸️ Pause", key="pause_path"):
+                            st.info("Learning path paused")
+                    
+                    with cols[2]:
+                        if make_accessible_button("📊 Progress", key="view_progress"):
+                            st.info("Progress details would be shown here")
+                    
+                    with cols[3]:
+                        if make_accessible_button("🗑️ Delete", key="delete_path"):
+                            st.warning("Path deletion would be confirmed here")
+
+
+def show_enhanced_user_profile():
+    """Enhanced user profile interface with comprehensive form validation"""
+    
+    with EnhancedCard(title="User Profile", icon="👤"):
+        user_info = session_manager.get_current_user()
+        
+        if not user_info:
+            st.error("User information not available")
+            return
+        
+        # Profile information display
+        with ResponsiveColumns([1, 2]) as cols:
+            with cols[0]:
+                st.markdown("### Profile Picture")
+                st.image("https://via.placeholder.com/150", width=150)
+                
+                if make_accessible_button("📷 Change Photo", key="change_photo"):
+                    st.info("Photo upload would be implemented here")
+            
+            with cols[1]:
+                with EnhancedForm(title="Profile Information") as form:
+                    name = form.text_input(
+                        "Full Name",
+                        "profile_name",
+                        value=user_info.name or "",
+                        required=True,
+                        help_text="Your display name"
+                    )
+                    
+                    email = form.email_input(
+                        "Email Address",
+                        "profile_email",
+                        value=user_info.email or "",
+                        required=True
+                    )
+                    
+                    bio = st.text_area(
+                        "Bio",
+                        value="",
+                        placeholder="Tell us about yourself...",
+                        key="profile_bio",
+                        help="Optional professional bio"
+                    )
+                    
+                    if form.submit_button("Update Profile"):
+                        if form.is_valid():
+                            with show_loading("update_profile", "Updating profile...", LoadingStyle.SPINNER):
+                                time.sleep(1)
+                                st.success("✅ Profile updated successfully!")
+                                announce_to_screen_reader("Profile updated successfully", "assertive")
+
+
+def show_enhanced_privacy_controls():
+    """Enhanced privacy controls with comprehensive data management"""
+    
+    with EnhancedCard(title="Privacy & Data Controls", icon="🔒"):
+        st.markdown("Manage your data privacy and control how your information is used.")
+        
+        # Privacy settings
+        with EnhancedCard(title="Privacy Settings", compact=True):
+            with ResponsiveColumns(2) as cols:
+                with cols[0]:
+                    data_sharing = st.checkbox(
+                        "Allow data sharing for research",
+                        value=False,
+                        key="privacy_data_sharing",
+                        help="Help improve EdAgent by sharing anonymized usage data"
+                    )
+                    
+                    marketing_emails = st.checkbox(
+                        "Receive marketing emails",
+                        value=True,
+                        key="privacy_marketing",
+                        help="Get updates about new features and tips"
+                    )
+                
+                with cols[1]:
+                    analytics_tracking = st.checkbox(
+                        "Enable analytics tracking",
+                        value=True,
+                        key="privacy_analytics",
+                        help="Track usage to improve your experience"
+                    )
+                    
+                    third_party_integrations = st.checkbox(
+                        "Allow third-party integrations",
+                        value=False,
+                        key="privacy_integrations",
+                        help="Enable connections with external services"
+                    )
+        
+        # Data management actions
+        with EnhancedCard(title="Data Management", compact=True):
+            with ResponsiveColumns(3) as cols:
+                with cols[0]:
+                    if make_accessible_button("📥 Export Data", key="export_data"):
+                        with show_loading("export_data", "Preparing data export...", LoadingStyle.PROGRESS_BAR):
+                            time.sleep(2)
+                            st.success("✅ Data export ready for download")
+                
+                with cols[1]:
+                    if make_accessible_button("🗑️ Delete Account", key="delete_account"):
+                        st.error("⚠️ This action cannot be undone!")
+                
+                with cols[2]:
+                    if make_accessible_button("🔄 Reset Preferences", key="reset_preferences"):
+                        st.info("Preferences would be reset to defaults")
+
+
+def show_enhanced_analytics():
+    """Enhanced analytics dashboard with interactive visualizations"""
+    
+    with EnhancedCard(title="Learning Analytics", icon="📈"):
+        st.markdown("Track your progress and analyze your learning journey.")
+        
+        # Mock analytics data
+        progress_data = {
+            "skills_assessed": 12,
+            "learning_paths": 3,
+            "study_hours": 45.5,
+            "completion_rate": 0.78
+        }
+        
+        # Key metrics with enhanced cards
+        with ResponsiveColumns(4) as cols:
+            with cols[0]:
+                with EnhancedCard(compact=True):
+                    st.metric("Skills Assessed", progress_data["skills_assessed"], delta=2)
+            
+            with cols[1]:
+                with EnhancedCard(compact=True):
+                    st.metric("Learning Paths", progress_data["learning_paths"], delta=1)
+            
+            with cols[2]:
+                with EnhancedCard(compact=True):
+                    st.metric("Study Hours", f"{progress_data['study_hours']:.1f}", delta=5.2)
+            
+            with cols[3]:
+                with EnhancedCard(compact=True):
+                    st.metric("Completion Rate", f"{progress_data['completion_rate']:.1%}", delta="8%")
+        
+        # Progress visualization
+        with ResponsiveColumns(2) as cols:
+            with cols[0]:
+                with EnhancedCard(title="Skill Progress", compact=True):
+                    # Mock skill data for radar chart
+                    skills_data = pd.DataFrame({
+                        'skill': ['Python', 'JavaScript', 'Data Science', 'Machine Learning', 'Web Dev'],
+                        'level': [85, 70, 90, 65, 75]
+                    })
+                    
+                    st.bar_chart(skills_data.set_index('skill'))
+            
+            with cols[1]:
+                with EnhancedCard(title="Learning Timeline", compact=True):
+                    # Mock timeline data
+                    timeline_data = pd.DataFrame({
+                        'date': pd.date_range('2024-01-01', periods=30, freq='D'),
+                        'hours': [1 + (i % 7) * 0.5 for i in range(30)]
+                    })
+                    
+                    st.line_chart(timeline_data.set_index('date'))
+
+
+def show_enhanced_interview_prep():
+    """Enhanced interview preparation with interactive practice"""
+    
+    with EnhancedCard(title="Interview Preparation", icon="🎤"):
+        render_interview_prep_widget()
+
+
+def show_enhanced_resume_help():
+    """Enhanced resume help with AI-powered analysis"""
+    
+    with EnhancedCard(title="Resume Optimization", icon="📄"):
+        render_resume_analyzer()
